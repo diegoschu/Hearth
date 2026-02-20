@@ -26,7 +26,7 @@ Hearth is a family household AI agent. It monitors WhatsApp chats and emails, pa
 4. Build message queue for processing pipeline
 
 ### Phase 4: AI Message Parsing
-1. Send raw messages to OpenAI GPT-4o-mini with structured output
+1. Send raw messages to Claude (Haiku) via Anthropic SDK with structured output
 2. Extract: event name, date, time, location, notes, action items
 3. Score confidence (0-1) based on parsing clarity
 4. Store parsed results linked to source messages
@@ -61,7 +61,7 @@ Hearth is a family household AI agent. It monitors WhatsApp chats and emails, pa
 - Rate limit: respect RapidAPI tier limits
 
 ### Message Parsing Prompt
-The OpenAI call should use this system prompt structure:
+The Anthropic Claude call should use this system prompt structure:
 ```
 You are a family calendar assistant. Parse the following message from a family-related chat group or email. Extract structured data.
 
@@ -124,7 +124,7 @@ For each new parsed event:
 - `detectConflicts(familyId, date)` — find overlapping events
 
 ### backend/src/services/parser.service.js
-- Use OpenAI npm package
+- Use Anthropic Claude npm package
 - `parseMessage(rawText, sourceContext)` — send to GPT, return structured event
 - Validate response schema before storing
 - If confidence < 0.5, mark as "needs_review"
@@ -144,5 +144,5 @@ For each new parsed event:
 - All times should be stored in UTC, converted to user's timezone on display
 - WhatsApp message polling should be idempotent (don't re-process same message)
 - Google OAuth tokens need refresh logic — access tokens expire after 1 hour
-- Rate limit OpenAI calls — batch messages where possible
+- Rate limit Anthropic Claude calls — batch messages where possible
 - The frontend mockup in App.jsx has the full UI spec — match it exactly when connecting to real data

@@ -15,7 +15,7 @@
 │                                                      │
 │  ┌──────────┐  ┌──────────┐  ┌───────────────────┐  │
 │  │ Message   │  │ Calendar │  │ Agent Intelligence │  │
-│  │ Ingestion │  │ Service  │  │ (OpenAI GPT-4)    │  │
+│  │ Ingestion │  │ Service  │  │ (Claude AI)    │  │
 │  └─────┬────┘  └────┬─────┘  └────────┬──────────┘  │
 │        │            │                  │              │
 │  ┌─────▼────┐ ┌────▼─────┐  ┌────────▼──────────┐  │
@@ -65,7 +65,7 @@
 | WhatsApp | RapidAPI - WhatsApp API |
 | Calendar | Google Calendar API |
 | Email | Google Gmail API |
-| AI/Parsing | OpenAI GPT-4o-mini |
+| AI/Parsing | Anthropic Claude (Haiku) |
 | Auth | Google OAuth 2.0 |
 | Hosting | Vercel (frontend) + Railway (backend) |
 
@@ -86,8 +86,8 @@ GOOGLE_REDIRECT_URI=http://localhost:3001/auth/google/callback
 RAPIDAPI_KEY=
 RAPIDAPI_WHATSAPP_HOST=
 
-# OpenAI
-OPENAI_API_KEY=
+# Anthropic (Claude AI)
+ANTHROPIC_API_KEY=
 
 # JWT
 JWT_SECRET=

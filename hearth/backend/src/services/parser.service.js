@@ -1,6 +1,6 @@
-const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const SYSTEM_PROMPT = `You are a family calendar assistant. Parse the following message from a family-related chat group or email. Extract structured data about any schedulable events, deadlines, or action items.
 
@@ -27,7 +27,7 @@ Rules:
 - Do NOT make up information. If a field is unclear, set it to null`;
 
 /**
- * Parse a raw message using GPT-4o-mini to extract structured event data.
+ * Parse a raw message using Claude to extract structured event data.
  */
 async function parseMessage(rawText, sourceContext = {}) {
   const today = new Date().toISOString().split('T')[0];
@@ -37,21 +37,19 @@ async function parseMessage(rawText, sourceContext = {}) {
 Source: ${sourceContext.sourceName || 'Unknown'} (${sourceContext.sourceLabel || 'General'})
 
 Message to parse:
-"${rawText}"`;
+"${rawText}"
+
+Respond with valid JSON only.`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.1,
-      max_tokens: 500,
-      response_format: { type: 'json_object' },
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
     });
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.content[0]?.text;
     const parsed = JSON.parse(content);
 
     // Validate required fields
@@ -66,7 +64,7 @@ Message to parse:
 
     return parsed;
   } catch (error) {
-    console.error('[Parser] OpenAI parsing failed:', error.message);
+    console.error('[Parser] Claude parsing failed:', error.message);
 
     // Return a low-confidence fallback
     return {
