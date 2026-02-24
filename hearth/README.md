@@ -1,155 +1,113 @@
 # Hearth 🏠
 
-**Your family's second brain** — An AI-powered household operations agent that parses messages from WhatsApp and email, manages a unified family calendar, and automates household logistics.
+Hearth is a family operations agent demo:
+- Google OAuth sign-in
+- Family creation/join by invite code
+- Source registry (WhatsApp/Gmail/GCal)
+- WhatsApp polling adapter scaffold with retries and error classification
+- AI parser service with schema validation and safe fallback
+- Agent orchestration with autonomy safety overrides
+- Feed, calendar, settings, digest APIs
+- Frontend wired to live backend APIs + auth callback routing + loading/error + polling
 
-## Architecture
+---
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    FRONTEND (React)                  │
-│  Feed │ Calendar │ Sources │ Settings                │
-└──────────────┬──────────────────────────────────────┘
-               │ REST API
-┌──────────────▼──────────────────────────────────────┐
-│                 BACKEND (Node.js/Express)            │
-│                                                      │
-│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐  │
-│  │ Message   │  │ Calendar │  │ Agent Intelligence │  │
-│  │ Ingestion │  │ Service  │  │ (OpenAI GPT-4)    │  │
-│  └─────┬────┘  └────┬─────┘  └────────┬──────────┘  │
-│        │            │                  │              │
-│  ┌─────▼────┐ ┌────▼─────┐  ┌────────▼──────────┐  │
-│  │ WhatsApp │ │ Google   │  │ Parser / Decision  │  │
-│  │ RapidAPI │ │ Cal API  │  │ Engine             │  │
-│  └──────────┘ └──────────┘  └────────────────────┘  │
-│                                                      │
-│              ┌──────────────┐                        │
-│              │  PostgreSQL  │                        │
-│              │  (Supabase)  │                        │
-│              └──────────────┘                        │
-└──────────────────────────────────────────────────────┘
-```
+## Monorepo Structure
 
-## Core Features
+- `backend/` Node + Express + Supabase + Google APIs
+- `frontend/` React + Vite
+- `docs/` API and logic docs
 
-### 1. Message Ingestion (Inputs)
-- **WhatsApp**: Via RapidAPI WhatsApp API — monitor registered group chats
-- **Gmail**: Via Google Gmail API — watch specific senders/labels
-- **Manual**: Users can paste/forward messages directly
+---
 
-### 2. Agent Intelligence (Processing)
-- Parse unstructured messages → extract events, dates, locations, action items
-- Conflict detection across family calendars
-- Suggest task assignments based on parent availability
-- Confidence scoring on parsed data
+## Local Demo Run (Exact Steps)
 
-### 3. Unified Calendar (Core State)
-- Merge Google Calendars from both parents
-- Color-coded ownership (Mom/Dad/Family)
-- Conflict flagging and resolution suggestions
-
-### 4. Autonomy Control (Output Modes)
-- **Dashboard** (👁️): Agent surfaces info, user acts
-- **Co-pilot** (🤝): Agent proposes, user approves
-- **Autopilot** (🚀): Agent acts, user is notified
-- Per-category and per-parent settings
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18 + Vite |
-| Styling | Tailwind CSS |
-| Backend | Node.js + Express |
-| Database | PostgreSQL (Supabase) |
-| WhatsApp | RapidAPI - WhatsApp API |
-| Calendar | Google Calendar API |
-| Email | Google Gmail API |
-| AI/Parsing | OpenAI GPT-4o-mini |
-| Auth | Google OAuth 2.0 |
-| Hosting | Vercel (frontend) + Railway (backend) |
-
-## Environment Variables
-
-```env
-# Backend (.env)
-PORT=3001
-NODE_ENV=development
-DATABASE_URL=postgresql://...
-
-# Google OAuth
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=http://localhost:3001/auth/google/callback
-
-# RapidAPI - WhatsApp
-RAPIDAPI_KEY=
-RAPIDAPI_WHATSAPP_HOST=
-
-# OpenAI
-OPENAI_API_KEY=
-
-# JWT
-JWT_SECRET=
-```
-
-## Getting Started
+### 1) Backend setup
 
 ```bash
-# Install dependencies
-cd frontend && npm install
-cd ../backend && npm install
-
-# Set up environment
-cp backend/.env.example backend/.env
-# Fill in required vars (Supabase + JWT + OAuth)
-
-# Run DB migration
-cd backend && npm run migrate
-
-# Run development
-cd backend && npm run dev    # Terminal 1
-cd frontend && npm run dev   # Terminal 2
+cd backend
+cp .env.example .env
+# fill all required vars (see checklist below)
+npm install
+npm run migrate
+npm run dev
 ```
 
-## Project Structure
+### 2) Frontend setup
 
-```
-hearth/
-├── frontend/
-│   ├── src/
-│   │   ├── components/     # React UI components
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── utils/          # Helper functions
-│   │   ├── styles/         # Global styles
-│   │   ├── App.jsx         # Main app component
-│   │   └── main.jsx        # Entry point
-│   ├── package.json
-│   └── vite.config.js
-├── backend/
-│   ├── src/
-│   │   ├── routes/         # API route handlers
-│   │   ├── services/       # Business logic
-│   │   ├── middleware/     # Auth, error handling
-│   │   ├── config/        # API configs
-│   │   └── models/        # Database models
-│   ├── package.json
-│   └── .env.example
-├── docs/
-│   ├── CODEX_INSTRUCTIONS.md
-│   ├── API_SPEC.md
-│   └── AGENT_LOGIC.md
-└── README.md
+```bash
+cd ../frontend
+cp .env.example .env
+npm install
+npm run dev
 ```
 
-## API Endpoints
+### 3) Open app
 
-See [docs/API_SPEC.md](docs/API_SPEC.md) for full specification.
+- Frontend: `http://localhost:5173`
+- Click **Continue with Google**
+- OAuth callback returns to `/auth/callback?token=...`
+- App loads live data from backend
 
-## Agent Logic
+---
 
-See [docs/AGENT_LOGIC.md](docs/AGENT_LOGIC.md) for parsing rules and decision trees.
+## Hosted Demo Run (Railway + Vercel)
 
-## Phase 1 Setup Notes
+### Backend (Railway)
+1. Deploy `backend/` service.
+2. Add env vars from checklist.
+3. Run migration once: `npm run migrate`.
+4. Start command: `npm start`.
 
-See [docs/PHASE1_BACKEND_SETUP.md](docs/PHASE1_BACKEND_SETUP.md) for backend foundation setup, migration, and run instructions.
+### Frontend (Vercel)
+1. Deploy `frontend/`.
+2. Set `VITE_API_BASE_URL=https://<your-backend-domain>`.
+3. Re-deploy.
+
+### Google OAuth for external-device demo accounts
+- Add both redirect URIs in Google Cloud OAuth app:
+  - `http://localhost:3001/auth/google/callback`
+  - `https://<backend-domain>/auth/google/callback`
+- Add allowed JS/origin URLs for local + hosted frontend domains.
+- If app is in Testing mode, whitelist all demo account emails in OAuth consent screen test users.
+
+---
+
+## Environment Checklist
+
+### Backend `.env`
+- `NODE_ENV`
+- `PORT`
+- `FRONTEND_URL`
+- `JWT_SECRET`
+- `ENABLE_POLLER`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_KEY`
+- `DATABASE_URL`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`
+- `RAPIDAPI_KEY`
+- `RAPIDAPI_WHATSAPP_HOST`
+- `OPENAI_API_KEY`
+- Optional: `OPENAI_MODEL`
+
+### Frontend `.env`
+- `VITE_API_BASE_URL`
+
+---
+
+## Current Known Limitations
+
+1. WhatsApp adapter is provider-agnostic scaffold; endpoint paths may need adjustment for your selected RapidAPI provider.
+2. Gmail polling ingestion is not yet implemented (source type exists; ingestion path pending).
+3. Family onboarding UI is basic (API-ready, minimal UX).
+4. Conflict suggestions are simple overlap checks and not yet optimization-based.
+5. No end-to-end integration tests yet (unit test coverage started for parser validation).
+
+---
+
+## Validation Run Results
+
+- Backend tests: ✅ `npm test`
+- Frontend build: ✅ `npm run build`
