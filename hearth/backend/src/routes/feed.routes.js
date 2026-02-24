@@ -1,44 +1,58 @@
 const express = require('express');
-const { supabase } = require('../config/database');
+const { query } = require('../config/database');
 const { createEvent } = require('../services/calendar.service');
 
 const router = express.Router();
 
-// GET /api/feed — Get parsed events for review
 router.get('/', async (req, res, next) => {
   try {
-    const { status, limit = 20, offset = 0 } = req.query;
+    const { status } = req.query;
+    const limit = Number(req.query.limit || 20);
+    const offset = Number(req.query.offset || 0);
 
-    let query = supabase
-      .from('parsed_events')
-      .select('*, raw_messages(content, sources(name, type, label))', { count: 'exact' })
-      .eq('family_id', req.user.family_id)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+    const where = ['pe.family_id = $1'];
+    const params = [req.user.family_id];
 
     if (status) {
-      query = query.eq('status', status);
+      params.push(status);
+      where.push(`pe.status = $${params.length}`);
     }
 
-    const { data: items, error, count } = await query;
-    if (error) throw error;
+    params.push(limit);
+    params.push(offset);
 
-    // Count pending
-    const { count: pendingCount } = await supabase
-      .from('parsed_events')
-      .select('*', { count: 'exact', head: true })
-      .eq('family_id', req.user.family_id)
-      .eq('status', 'pending');
+    const rowsResult = await query(
+      `SELECT pe.*, rm.content AS raw_message_content, s.type AS source_type, s.name AS source_name, s.label AS source_label
+       FROM parsed_events pe
+       LEFT JOIN raw_messages rm ON rm.id = pe.raw_message_id
+       LEFT JOIN sources s ON s.id = rm.source_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY pe.created_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
 
-    // Format response
-    const formatted = (items || []).map((item) => ({
+    const countParams = [req.user.family_id];
+    let countWhere = 'family_id = $1';
+    if (status) {
+      countParams.push(status);
+      countWhere += ` AND status = $2`;
+    }
+
+    const totalResult = await query(`SELECT COUNT(*)::int AS count FROM parsed_events WHERE ${countWhere}`, countParams);
+    const pendingResult = await query(
+      'SELECT COUNT(*)::int AS count FROM parsed_events WHERE family_id = $1 AND status = $2',
+      [req.user.family_id, 'pending']
+    );
+
+    const formatted = rowsResult.rows.map((item) => ({
       id: item.id,
       source: {
-        type: item.raw_messages?.sources?.type,
-        name: item.raw_messages?.sources?.name,
-        label: item.raw_messages?.sources?.label,
+        type: item.source_type,
+        name: item.source_name,
+        label: item.source_label,
       },
-      rawMessage: item.raw_messages?.content,
+      rawMessage: item.raw_message_content,
       parsed: {
         eventName: item.event_name,
         date: item.date,
@@ -55,29 +69,30 @@ router.get('/', async (req, res, next) => {
       createdAt: item.created_at,
     }));
 
-    res.json({ items: formatted, total: count, pendingCount });
+    res.json({
+      items: formatted,
+      total: totalResult.rows[0]?.count || 0,
+      pendingCount: pendingResult.rows[0]?.count || 0,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/feed/:id/confirm — Confirm a parsed event, push to Google Calendar
 router.post('/:id/confirm', async (req, res, next) => {
   try {
     const { assignTo, adjustments } = req.body;
 
-    const { data: parsedEvent } = await supabase
-      .from('parsed_events')
-      .select('*')
-      .eq('id', req.params.id)
-      .eq('family_id', req.user.family_id)
-      .single();
+    const parsedResult = await query(
+      'SELECT * FROM parsed_events WHERE id = $1 AND family_id = $2 LIMIT 1',
+      [req.params.id, req.user.family_id]
+    );
+    const parsedEvent = parsedResult.rows[0];
 
     if (!parsedEvent) {
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found' } });
     }
 
-    // Apply adjustments if provided
     const eventDate = adjustments?.date || parsedEvent.date;
     const eventTime = adjustments?.time || (parsedEvent.time ? String(parsedEvent.time).slice(0, 5) : '09:00');
 
@@ -88,7 +103,6 @@ router.post('/:id/confirm', async (req, res, next) => {
 
     const targetUserId = assignTo || req.user.id;
 
-    // Create Google Calendar event
     const gcalEvent = await createEvent(targetUserId, {
       title: parsedEvent.event_name || 'Family Event',
       startTime,
@@ -97,16 +111,12 @@ router.post('/:id/confirm', async (req, res, next) => {
       notes: parsedEvent.notes,
     });
 
-    // Update parsed event status
-    await supabase
-      .from('parsed_events')
-      .update({
-        status: 'confirmed',
-        assigned_to: targetUserId,
-        google_event_id: gcalEvent.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', req.params.id);
+    await query(
+      `UPDATE parsed_events
+       SET status = 'confirmed', assigned_to = $1, google_event_id = $2, updated_at = NOW()
+       WHERE id = $3`,
+      [targetUserId, gcalEvent.id, req.params.id]
+    );
 
     res.json({ calendarEventId: gcalEvent.id, status: 'confirmed' });
   } catch (err) {
@@ -114,16 +124,15 @@ router.post('/:id/confirm', async (req, res, next) => {
   }
 });
 
-// POST /api/feed/:id/dismiss — Dismiss a parsed event
 router.post('/:id/dismiss', async (req, res, next) => {
   try {
-    const { error } = await supabase
-      .from('parsed_events')
-      .update({ status: 'dismissed', updated_at: new Date().toISOString() })
-      .eq('id', req.params.id)
-      .eq('family_id', req.user.family_id);
+    await query(
+      `UPDATE parsed_events
+       SET status = 'dismissed', updated_at = NOW()
+       WHERE id = $1 AND family_id = $2`,
+      [req.params.id, req.user.family_id]
+    );
 
-    if (error) throw error;
     res.json({ status: 'dismissed' });
   } catch (err) {
     next(err);

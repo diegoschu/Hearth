@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { supabase } = require('../config/database');
+const { query } = require('../config/database');
 
 async function authMiddleware(req, res, next) {
   try {
@@ -11,13 +11,16 @@ async function authMiddleware(req, res, next) {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, email, name, picture, family_id, google_tokens')
-      .eq('id', decoded.userId)
-      .single();
+    const result = await query(
+      `SELECT id, email, name, picture, family_id, google_tokens
+       FROM users
+       WHERE id = $1
+       LIMIT 1`,
+      [decoded.userId]
+    );
 
-    if (error || !user) {
+    const user = result.rows[0];
+    if (!user) {
       return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'User not found' } });
     }
 

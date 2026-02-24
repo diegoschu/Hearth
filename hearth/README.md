@@ -4,37 +4,30 @@ Hearth is a family operations agent demo:
 - Google OAuth sign-in
 - Family creation/join by invite code
 - Source registry (WhatsApp/Gmail/GCal)
-- WhatsApp polling adapter scaffold with retries and error classification
-- AI parser service with schema validation and safe fallback
-- Agent orchestration with autonomy safety overrides
-- Feed, calendar, settings, digest APIs
-- Frontend wired to live backend APIs + auth callback routing + loading/error + polling
+- AI parsing + review feed + calendar sync + digest
+- Deployable backend/frontend for external phone access
 
 ---
 
-## Monorepo Structure
-
-- `backend/` Node + Express + Supabase + Google APIs
+## Monorepo
+- `backend/` Express API (Postgres-first; works with Supabase Postgres too)
 - `frontend/` React + Vite
-- `docs/` API and logic docs
+- `docs/` specs/notes
 
 ---
 
-## Local Demo Run (Exact Steps)
+## Local Run
 
-### 1) Backend setup
-
+### Backend
 ```bash
 cd backend
 cp .env.example .env
-# fill all required vars (see checklist below)
 npm install
 npm run migrate
 npm run dev
 ```
 
-### 2) Frontend setup
-
+### Frontend
 ```bash
 cd ../frontend
 cp .env.example .env
@@ -42,72 +35,67 @@ npm install
 npm run dev
 ```
 
-### 3) Open app
-
-- Frontend: `http://localhost:5173`
-- Click **Continue with Google**
-- OAuth callback returns to `/auth/callback?token=...`
-- App loads live data from backend
+Open `http://localhost:5173`.
 
 ---
 
-## Hosted Demo Run (Railway + Vercel)
+## Production Demo Deploy
 
-### Backend (Railway)
-1. Deploy `backend/` service.
-2. Add env vars from checklist.
-3. Run migration once: `npm run migrate`.
-4. Start command: `npm start`.
+### Railway (backend)
+- Root directory: `backend`
+- Build command: `npm ci`
+- Start command: `npm start`
+- Optional one-time migration command: `npm run migrate`
+- Health check path: `/health`
+- Readiness check path: `/ready`
 
-### Frontend (Vercel)
-1. Deploy `frontend/`.
-2. Set `VITE_API_BASE_URL=https://<your-backend-domain>`.
-3. Re-deploy.
-
-### Google OAuth for external-device demo accounts
-- Add both redirect URIs in Google Cloud OAuth app:
-  - `http://localhost:3001/auth/google/callback`
-  - `https://<backend-domain>/auth/google/callback`
-- Add allowed JS/origin URLs for local + hosted frontend domains.
-- If app is in Testing mode, whitelist all demo account emails in OAuth consent screen test users.
-
----
-
-## Environment Checklist
-
-### Backend `.env`
-- `NODE_ENV`
-- `PORT`
-- `FRONTEND_URL`
-- `JWT_SECRET`
-- `ENABLE_POLLER`
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_KEY`
-- `DATABASE_URL`
+Required backend env vars:
+- `NODE_ENV=production`
+- `PORT` (Railway usually injects this)
+- `FRONTEND_URL=https://<your-vercel-domain>`
+- `JWT_SECRET=<strong-random-string>`
+- `DATABASE_URL=<railway postgres url or supabase postgres url>`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_REDIRECT_URI`
+- `GOOGLE_REDIRECT_URI=https://<your-railway-domain>/auth/google/callback`
+
+Optional backend env vars:
+- `ENABLE_POLLER=false` (set true only when ready)
 - `RAPIDAPI_KEY`
 - `RAPIDAPI_WHATSAPP_HOST`
 - `OPENAI_API_KEY`
-- Optional: `OPENAI_MODEL`
+- `OPENAI_MODEL`
+- `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` (not required anymore)
 
-### Frontend `.env`
-- `VITE_API_BASE_URL`
+### Vercel (frontend)
+- Root directory: `frontend`
+- Build command: `npm run build`
+- Output directory: `dist`
 
----
-
-## Current Known Limitations
-
-1. WhatsApp adapter is provider-agnostic scaffold; endpoint paths may need adjustment for your selected RapidAPI provider.
-2. Gmail polling ingestion is not yet implemented (source type exists; ingestion path pending).
-3. Family onboarding UI is basic (API-ready, minimal UX).
-4. Conflict suggestions are simple overlap checks and not yet optimization-based.
-5. No end-to-end integration tests yet (unit test coverage started for parser validation).
+Required frontend env vars:
+- `VITE_API_BASE_URL=https://<your-railway-domain>`
 
 ---
 
-## Validation Run Results
+## Google OAuth Setup (required for external phone demo)
+In Google Cloud OAuth client settings add:
+- Authorized redirect URI:
+  - `http://localhost:3001/auth/google/callback`
+  - `https://<your-railway-domain>/auth/google/callback`
+- Authorized JavaScript origins:
+  - `http://localhost:5173`
+  - `https://<your-vercel-domain>`
 
-- Backend tests: ✅ `npm test`
-- Frontend build: ✅ `npm run build`
+If OAuth consent screen is in **Testing**, add all demo account emails as test users.
+
+---
+
+## Health/Readiness
+- `GET /health` → app + DB liveness
+- `GET /ready` → DB readiness for serving traffic
+
+---
+
+## Validation
+- Backend tests: `cd backend && npm test`
+- Frontend build: `cd frontend && npm run build`

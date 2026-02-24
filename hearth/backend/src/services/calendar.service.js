@@ -1,9 +1,10 @@
 const { google } = require('googleapis');
 const { getAuthenticatedClient } = require('../config/google');
-const { supabase } = require('../config/database');
+const { query } = require('../config/database');
 
 async function syncCalendar(userId) {
-  const { data: user } = await supabase.from('users').select('google_tokens, family_id').eq('id', userId).single();
+  const userResult = await query('SELECT google_tokens, family_id FROM users WHERE id = $1 LIMIT 1', [userId]);
+  const user = userResult.rows[0];
   if (!user?.google_tokens) throw new Error('No Google tokens for user');
 
   const authClient = getAuthenticatedClient(user.google_tokens, userId);
@@ -25,25 +26,29 @@ async function syncCalendar(userId) {
     const startTime = event.start?.dateTime || `${event.start?.date}T00:00:00Z`;
     const endTime = event.end?.dateTime || `${event.end?.date}T00:00:00Z`;
 
-    await supabase.from('calendar_events').upsert({
-      user_id: userId,
-      family_id: user.family_id,
-      google_event_id: event.id,
-      title: event.summary || 'Untitled Event',
-      start_time: startTime,
-      end_time: endTime,
-      location: event.location || null,
-      description: event.description || null,
-      calendar_id: 'primary',
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id,google_event_id' });
+    await query(
+      `INSERT INTO calendar_events (
+          user_id, family_id, google_event_id, title, start_time, end_time, location, description, calendar_id, updated_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+        ON CONFLICT (user_id, google_event_id)
+        DO UPDATE SET
+          title = EXCLUDED.title,
+          start_time = EXCLUDED.start_time,
+          end_time = EXCLUDED.end_time,
+          location = EXCLUDED.location,
+          description = EXCLUDED.description,
+          calendar_id = EXCLUDED.calendar_id,
+          updated_at = NOW()`,
+      [userId, user.family_id, event.id, event.summary || 'Untitled Event', startTime, endTime, event.location || null, event.description || null, 'primary']
+    );
   }
 
   return events.length;
 }
 
 async function createEvent(userId, eventData) {
-  const { data: user } = await supabase.from('users').select('google_tokens, family_id').eq('id', userId).single();
+  const userResult = await query('SELECT google_tokens, family_id FROM users WHERE id = $1 LIMIT 1', [userId]);
+  const user = userResult.rows[0];
   if (!user?.google_tokens) throw new Error('No Google tokens for user');
 
   const authClient = getAuthenticatedClient(user.google_tokens, userId);
@@ -60,42 +65,38 @@ async function createEvent(userId, eventData) {
     },
   });
 
-  await supabase.from('calendar_events').insert({
-    user_id: userId,
-    family_id: user.family_id,
-    google_event_id: response.data.id,
-    title: eventData.title,
-    start_time: eventData.startTime,
-    end_time: eventData.endTime,
-    location: eventData.location,
-    description: eventData.notes,
-    calendar_id: 'primary',
-  });
+  await query(
+    `INSERT INTO calendar_events
+      (user_id, family_id, google_event_id, title, start_time, end_time, location, description, calendar_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [userId, user.family_id, response.data.id, eventData.title, eventData.startTime, eventData.endTime, eventData.location, eventData.notes, 'primary']
+  );
 
   return response.data;
 }
 
 async function getUnifiedView(familyId, startDate, endDate) {
-  const { data: events, error } = await supabase
-    .from('calendar_events')
-    .select('*, users(id, name, picture)')
-    .eq('family_id', familyId)
-    .gte('start_time', `${startDate}T00:00:00Z`)
-    .lte('start_time', `${endDate}T23:59:59Z`)
-    .order('start_time', { ascending: true });
-
-  if (error) throw error;
+  const result = await query(
+    `SELECT ce.*, u.id AS owner_id, u.name AS owner_name, u.picture AS owner_picture
+     FROM calendar_events ce
+     LEFT JOIN users u ON u.id = ce.user_id
+     WHERE ce.family_id = $1
+       AND ce.start_time >= $2::timestamptz
+       AND ce.start_time <= $3::timestamptz
+     ORDER BY ce.start_time ASC`,
+    [familyId, `${startDate}T00:00:00Z`, `${endDate}T23:59:59Z`]
+  );
 
   const grouped = {};
-  for (const event of events || []) {
-    const date = event.start_time.split('T')[0];
+  for (const event of result.rows || []) {
+    const date = event.start_time.toISOString().split('T')[0];
     if (!grouped[date]) grouped[date] = { date, events: [] };
     grouped[date].events.push({
       id: event.id,
       title: event.title,
       start: event.start_time,
       end: event.end_time,
-      owner: event.users,
+      owner: { id: event.owner_id, name: event.owner_name, picture: event.owner_picture },
       source: 'google_calendar',
       color: event.color || '#4A90D9',
       location: event.location,
@@ -106,16 +107,19 @@ async function getUnifiedView(familyId, startDate, endDate) {
 }
 
 async function detectConflicts(familyId, date) {
-  const { data: events } = await supabase
-    .from('calendar_events')
-    .select('id, user_id, title, start_time, end_time')
-    .eq('family_id', familyId)
-    .gte('start_time', `${date}T00:00:00Z`)
-    .lte('start_time', `${date}T23:59:59Z`)
-    .order('start_time', { ascending: true });
+  const result = await query(
+    `SELECT id, user_id, title, start_time, end_time
+     FROM calendar_events
+     WHERE family_id = $1
+       AND start_time >= $2::timestamptz
+       AND start_time <= $3::timestamptz
+     ORDER BY start_time ASC`,
+    [familyId, `${date}T00:00:00Z`, `${date}T23:59:59Z`]
+  );
 
+  const events = result.rows || [];
   const conflicts = [];
-  for (let i = 0; i < (events || []).length; i++) {
+  for (let i = 0; i < events.length; i++) {
     for (let j = i + 1; j < events.length; j++) {
       const a = events[i];
       const b = events[j];

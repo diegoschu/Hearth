@@ -1,5 +1,5 @@
 const { google } = require('googleapis');
-const { supabase } = require('./database');
+const { query } = require('./database');
 
 function createOAuthClient() {
   return new google.auth.OAuth2(
@@ -57,10 +57,10 @@ function getAuthenticatedClient(tokens, userId) {
         refresh_token: newTokens.refresh_token || safeTokens.refresh_token || null,
       };
 
-      await supabase
-        .from('users')
-        .update({ google_tokens: nextTokens, updated_at: new Date().toISOString() })
-        .eq('id', userId);
+      await query(
+        'UPDATE users SET google_tokens = $1::jsonb, updated_at = NOW() WHERE id = $2',
+        [JSON.stringify(nextTokens), userId]
+      );
     } catch (err) {
       console.error('[Google] Failed to persist refreshed tokens:', err.message);
     }

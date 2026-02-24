@@ -1,25 +1,21 @@
 const express = require('express');
-const { supabase } = require('../config/database');
+const { query } = require('../config/database');
 
 const router = express.Router();
 
-// GET /api/settings/autonomy — Get autonomy settings for current user
 router.get('/autonomy', async (req, res, next) => {
   try {
-    const { data: settings, error } = await supabase
-      .from('autonomy_settings')
-      .select('*')
-      .eq('user_id', req.user.id)
-      .order('category');
+    const result = await query(
+      'SELECT * FROM autonomy_settings WHERE user_id = $1 ORDER BY category ASC',
+      [req.user.id]
+    );
 
-    if (error) throw error;
-    res.json(settings || []);
+    res.json(result.rows || []);
   } catch (err) {
     next(err);
   }
 });
 
-// PUT /api/settings/autonomy — Update a category's autonomy level
 router.put('/autonomy', async (req, res, next) => {
   try {
     const { category, level } = req.body;
@@ -28,17 +24,16 @@ router.put('/autonomy', async (req, res, next) => {
       return res.status(400).json({ error: { message: 'Level must be 1, 2, or 3' } });
     }
 
-    const { data, error } = await supabase
-      .from('autonomy_settings')
-      .upsert(
-        { user_id: req.user.id, category, level, updated_at: new Date().toISOString() },
-        { onConflict: 'user_id,category' }
-      )
-      .select()
-      .single();
+    const result = await query(
+      `INSERT INTO autonomy_settings (user_id, category, level, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (user_id, category)
+       DO UPDATE SET level = EXCLUDED.level, updated_at = NOW()
+       RETURNING *`,
+      [req.user.id, category, level]
+    );
 
-    if (error) throw error;
-    res.json(data);
+    res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }

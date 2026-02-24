@@ -1,5 +1,5 @@
 const express = require('express');
-const { supabase } = require('../config/database');
+const { query } = require('../config/database');
 const { getGroups } = require('../services/whatsapp.service');
 
 const router = express.Router();
@@ -7,14 +7,13 @@ const router = express.Router();
 router.get('/', async (req, res, next) => {
   try {
     if (!req.user.family_id) return res.json([]);
-    const { data: sources, error } = await supabase
-      .from('sources')
-      .select('*')
-      .eq('family_id', req.user.family_id)
-      .order('created_at', { ascending: false });
 
-    if (error) throw error;
-    res.json(sources || []);
+    const result = await query(
+      'SELECT * FROM sources WHERE family_id = $1 ORDER BY created_at DESC',
+      [req.user.family_id]
+    );
+
+    res.json(result.rows || []);
   } catch (err) {
     next(err);
   }
@@ -45,22 +44,14 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: { code: 'INVALID_NAME', message: 'Source name is required' } });
     }
 
-    const { data: source, error } = await supabase
-      .from('sources')
-      .insert({
-        family_id: req.user.family_id,
-        created_by: req.user.id,
-        type,
-        name: String(name).trim(),
-        label: label || 'General',
-        config: config || {},
-        status: 'connected',
-      })
-      .select()
-      .single();
+    const insert = await query(
+      `INSERT INTO sources (family_id, created_by, type, name, label, config, status)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'connected')
+       RETURNING *`,
+      [req.user.family_id, req.user.id, type, String(name).trim(), label || 'General', JSON.stringify(config || {})]
+    );
 
-    if (error) throw error;
-    res.status(201).json(source);
+    res.status(201).json(insert.rows[0]);
   } catch (err) {
     next(err);
   }
@@ -68,13 +59,7 @@ router.post('/', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    const { error } = await supabase
-      .from('sources')
-      .delete()
-      .eq('id', req.params.id)
-      .eq('family_id', req.user.family_id);
-
-    if (error) throw error;
+    await query('DELETE FROM sources WHERE id = $1 AND family_id = $2', [req.params.id, req.user.family_id]);
     res.json({ deleted: true });
   } catch (err) {
     next(err);

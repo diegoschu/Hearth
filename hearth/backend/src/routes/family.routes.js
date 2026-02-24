@@ -1,52 +1,41 @@
 const express = require('express');
 const crypto = require('crypto');
-const { supabase } = require('../config/database');
+const { query } = require('../config/database');
 
 const router = express.Router();
 
-// GET /api/family — Get current user's family
 router.get('/', async (req, res, next) => {
   try {
     if (!req.user.family_id) {
       return res.json({ family: null, message: 'Not part of a family yet' });
     }
 
-    const { data: family } = await supabase
-      .from('families')
-      .select('*')
-      .eq('id', req.user.family_id)
-      .single();
+    const familyResult = await query('SELECT * FROM families WHERE id = $1 LIMIT 1', [req.user.family_id]);
+    const family = familyResult.rows[0];
 
-    const { data: members } = await supabase
-      .from('users')
-      .select('id, name, email, picture')
-      .eq('family_id', req.user.family_id);
+    const membersResult = await query(
+      'SELECT id, name, email, picture FROM users WHERE family_id = $1 ORDER BY created_at ASC',
+      [req.user.family_id]
+    );
 
-    res.json({ ...family, members });
+    res.json({ ...family, members: membersResult.rows });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/family — Create a new family
 router.post('/', async (req, res, next) => {
   try {
     const { name } = req.body;
     const inviteCode = crypto.randomBytes(4).toString('hex').toUpperCase();
 
-    const { data: family, error } = await supabase
-      .from('families')
-      .insert({ name, invite_code: inviteCode })
-      .select()
-      .single();
+    const familyInsert = await query(
+      'INSERT INTO families (name, invite_code) VALUES ($1, $2) RETURNING *',
+      [name, inviteCode]
+    );
+    const family = familyInsert.rows[0];
 
-    if (error) throw error;
-
-    // Assign user to family
-    await supabase
-      .from('users')
-      .update({ family_id: family.id })
-      .eq('id', req.user.id);
+    await query('UPDATE users SET family_id = $1, updated_at = NOW() WHERE id = $2', [family.id, req.user.id]);
 
     res.status(201).json(family);
   } catch (err) {
@@ -54,32 +43,22 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// POST /api/family/join — Join a family with invite code
 router.post('/join', async (req, res, next) => {
   try {
     const { inviteCode } = req.body;
 
-    const { data: family } = await supabase
-      .from('families')
-      .select('*')
-      .eq('invite_code', inviteCode.toUpperCase())
-      .single();
+    const familyResult = await query('SELECT * FROM families WHERE invite_code = $1 LIMIT 1', [String(inviteCode || '').toUpperCase()]);
+    const family = familyResult.rows[0];
 
     if (!family) {
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Invalid invite code' } });
     }
 
-    await supabase
-      .from('users')
-      .update({ family_id: family.id })
-      .eq('id', req.user.id);
+    await query('UPDATE users SET family_id = $1, updated_at = NOW() WHERE id = $2', [family.id, req.user.id]);
 
-    const { data: members } = await supabase
-      .from('users')
-      .select('id, name, email, picture')
-      .eq('family_id', family.id);
+    const membersResult = await query('SELECT id, name, email, picture FROM users WHERE family_id = $1', [family.id]);
 
-    res.json({ ...family, members });
+    res.json({ ...family, members: membersResult.rows });
   } catch (err) {
     next(err);
   }

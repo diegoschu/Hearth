@@ -1,6 +1,6 @@
 const axios = require('axios');
 const crypto = require('crypto');
-const { supabase } = require('../config/database');
+const { query } = require('../config/database');
 
 const rapidApiClient = axios.create({
   baseURL: process.env.RAPIDAPI_WHATSAPP_HOST ? `https://${process.env.RAPIDAPI_WHATSAPP_HOST}` : undefined,
@@ -62,13 +62,10 @@ async function getGroups() {
 }
 
 async function pollAllSources() {
-  const { data: sources, error } = await supabase.from('sources').select('*').eq('type', 'whatsapp').eq('status', 'connected');
-  if (error) {
-    console.error('[WhatsApp] Failed to fetch sources:', error.message);
-    return;
-  }
+  const sourcesResult = await query("SELECT * FROM sources WHERE type = 'whatsapp' AND status = 'connected'");
+  const sources = sourcesResult.rows || [];
 
-  for (const source of sources || []) {
+  for (const source of sources) {
     try {
       const chatId = source.config?.chatId;
       if (!chatId) continue;
@@ -81,38 +78,44 @@ async function pollAllSources() {
         if (!content.trim()) continue;
 
         const contentHash = hashContent(content);
-        const { error: insertError } = await supabase
-          .from('raw_messages')
-          .upsert(
-            {
-              source_id: source.id,
-              family_id: source.family_id,
-              external_id: msg.id || msg.messageId || null,
-              content,
-              sender: msg.sender || msg.from || 'Unknown',
-              content_hash: contentHash,
-              received_at: msg.timestamp ? new Date(msg.timestamp * 1000).toISOString() : new Date().toISOString(),
-              processed: false,
-            },
-            { onConflict: 'source_id,content_hash', ignoreDuplicates: true }
-          );
+        const insertResult = await query(
+          `INSERT INTO raw_messages
+            (source_id, family_id, external_id, content, sender, content_hash, received_at, processed)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,false)
+           ON CONFLICT (source_id, content_hash) DO NOTHING
+           RETURNING id`,
+          [
+            source.id,
+            source.family_id,
+            msg.id || msg.messageId || null,
+            content,
+            msg.sender || msg.from || 'Unknown',
+            contentHash,
+            msg.timestamp ? new Date(msg.timestamp * 1000).toISOString() : new Date().toISOString(),
+          ]
+        );
 
-        if (!insertError) newCount += 1;
+        if (insertResult.rowCount > 0) newCount += 1;
       }
 
-      await supabase.from('sources').update({
-        last_polled: new Date().toISOString(),
-        message_count: (source.message_count || 0) + newCount,
-        status: 'connected',
-        last_error: null,
-      }).eq('id', source.id);
+      await query(
+        `UPDATE sources
+         SET last_polled = NOW(),
+             message_count = COALESCE(message_count, 0) + $1,
+             status = 'connected',
+             last_error = NULL
+         WHERE id = $2`,
+        [newCount, source.id]
+      );
     } catch (err) {
       const info = classifyError(err);
       console.error(`[WhatsApp] Poll error for ${source.name}:`, err.message);
-      await supabase
-        .from('sources')
-        .update({ status: info.retryable ? 'connected' : 'error', last_error: `${info.type}: ${err.message}`, last_polled: new Date().toISOString() })
-        .eq('id', source.id);
+      await query(
+        `UPDATE sources
+         SET status = $1, last_error = $2, last_polled = NOW()
+         WHERE id = $3`,
+        [info.retryable ? 'connected' : 'error', `${info.type}: ${err.message}`, source.id]
+      );
     }
   }
 }

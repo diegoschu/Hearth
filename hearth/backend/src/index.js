@@ -15,28 +15,29 @@ const { authMiddleware } = require('./middleware/auth.middleware');
 const { errorHandler } = require('./middleware/error.middleware');
 const { pollAllSources } = require('./services/whatsapp.service');
 const { processNewMessages } = require('./services/agent.service');
-const { requireEnv } = require('./config/database');
+const { requireEnv, healthcheckDb, dbMode } = require('./config/database');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const startedAt = Date.now();
 
 try {
   requireEnv('JWT_SECRET');
   requireEnv('FRONTEND_URL');
+  requireEnv('DATABASE_URL');
 } catch (error) {
-  console.error(error.message);
-  console.error('Copy backend/.env.example to backend/.env and fill required values.');
+  console.error('[Startup] Missing required env:', error.message);
+  console.error('[Startup] Copy backend/.env.example to backend/.env and fill required values.');
   process.exit(1);
 }
 
-// Middleware
+console.log(`[Startup] Hearth backend booting (dbMode=${dbMode}, nodeEnv=${process.env.NODE_ENV || 'development'})`);
+
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 app.use(express.json());
 
-// Public routes
 app.use('/auth', authRoutes);
 
-// Protected routes
 app.use('/api/family', authMiddleware, familyRoutes);
 app.use('/api/sources', authMiddleware, sourceRoutes);
 app.use('/api/feed', authMiddleware, feedRoutes);
@@ -44,12 +45,24 @@ app.use('/api/calendar', authMiddleware, calendarRoutes);
 app.use('/api/settings', authMiddleware, settingsRoutes);
 app.use('/api/digest', authMiddleware, digestRoutes);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  try {
+    await healthcheckDb();
+    res.json({ status: 'ok', uptimeSec: Math.round((Date.now() - startedAt) / 1000), timestamp: new Date().toISOString() });
+  } catch (error) {
+    res.status(503).json({ status: 'degraded', error: error.message, timestamp: new Date().toISOString() });
+  }
 });
 
-// Error handler
+app.get('/ready', async (req, res) => {
+  try {
+    await healthcheckDb();
+    res.json({ ready: true, db: 'ok', timestamp: new Date().toISOString() });
+  } catch (error) {
+    res.status(503).json({ ready: false, db: 'error', error: error.message, timestamp: new Date().toISOString() });
+  }
+});
+
 app.use(errorHandler);
 
 const pollerEnabled = process.env.ENABLE_POLLER === 'true';
@@ -67,7 +80,6 @@ if (pollerEnabled) {
   cron.schedule('0 7 * * *', async () => {
     try {
       console.log('[CRON] Generating daily digests...');
-      // TODO: Generate and send digest for each family
     } catch (err) {
       console.error('[CRON] Digest error:', err.message);
     }
@@ -76,8 +88,20 @@ if (pollerEnabled) {
   console.log('[CRON] Poller disabled (set ENABLE_POLLER=true to enable).');
 }
 
-app.listen(PORT, () => {
-  console.log(`🏠 Hearth backend running on port ${PORT}`);
-});
+async function start() {
+  try {
+    await healthcheckDb();
+    console.log('[Startup] Database connectivity check passed.');
+  } catch (error) {
+    console.error('[Startup] Database connectivity check failed:', error.message);
+    process.exit(1);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`🏠 Hearth backend running on port ${PORT}`);
+  });
+}
+
+start();
 
 module.exports = app;

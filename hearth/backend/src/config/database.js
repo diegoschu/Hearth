@@ -1,4 +1,4 @@
-const { createClient } = require('@supabase/supabase-js');
+const { Pool } = require('pg');
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -8,15 +8,28 @@ function requireEnv(name) {
   return value;
 }
 
-function createSupabaseClient() {
-  const url = requireEnv('SUPABASE_URL');
-  const serviceKey = requireEnv('SUPABASE_SERVICE_KEY');
+const hasSupabaseKeys = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
+const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
 
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
+if (!hasDatabaseUrl) {
+  throw new Error('[Config] Missing required environment variable: DATABASE_URL');
 }
 
-const supabase = createSupabaseClient();
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-module.exports = { supabase, requireEnv };
+async function query(text, params = []) {
+  const result = await pool.query(text, params);
+  return result;
+}
+
+async function healthcheckDb() {
+  await query('select 1');
+}
+
+module.exports = {
+  query,
+  pool,
+  healthcheckDb,
+  requireEnv,
+  dbMode: hasSupabaseKeys ? 'supabase+postgres' : 'postgres',
+};

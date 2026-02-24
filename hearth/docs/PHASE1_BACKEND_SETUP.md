@@ -21,10 +21,13 @@ cp .env.example .env
 ```
 
 Required variables for startup:
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_KEY`
+- `DATABASE_URL`
 - `JWT_SECRET`
 - `FRONTEND_URL`
+
+Optional (not required):
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_KEY`
 
 If `ENABLE_POLLER=true`, also set WhatsApp/OpenAI keys.
 
