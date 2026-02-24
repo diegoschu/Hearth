@@ -13,10 +13,9 @@ router.get('/', async (req, res, next) => {
 
     const events = await getUnifiedView(req.user.family_id, startDate, endDate);
 
-    // Check conflicts for each day
     const allConflicts = [];
-    for (const date of Object.keys(events)) {
-      const dayConflicts = await detectConflicts(req.user.family_id, date);
+    for (const day of events) {
+      const dayConflicts = await detectConflicts(req.user.family_id, day.date);
       if (dayConflicts.length) allConflicts.push(...dayConflicts);
     }
 

@@ -79,11 +79,11 @@ router.post('/:id/confirm', async (req, res, next) => {
 
     // Apply adjustments if provided
     const eventDate = adjustments?.date || parsedEvent.date;
-    const eventTime = adjustments?.time || parsedEvent.time || '09:00';
+    const eventTime = adjustments?.time || (parsedEvent.time ? String(parsedEvent.time).slice(0, 5) : '09:00');
 
     const startTime = `${eventDate}T${eventTime}:00`;
     const endTime = parsedEvent.end_time
-      ? `${eventDate}T${parsedEvent.end_time}:00`
+      ? `${eventDate}T${String(parsedEvent.end_time).slice(0, 5)}:00`
       : new Date(new Date(startTime).getTime() + 60 * 60 * 1000).toISOString();
 
     const targetUserId = assignTo || req.user.id;

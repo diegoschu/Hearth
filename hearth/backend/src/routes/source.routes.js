@@ -1,11 +1,12 @@
 const express = require('express');
 const { supabase } = require('../config/database');
+const { getGroups } = require('../services/whatsapp.service');
 
 const router = express.Router();
 
-// GET /api/sources — List all sources for user's family
 router.get('/', async (req, res, next) => {
   try {
+    if (!req.user.family_id) return res.json([]);
     const { data: sources, error } = await supabase
       .from('sources')
       .select('*')
@@ -19,13 +20,29 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// POST /api/sources — Register a new source
+router.get('/whatsapp/groups', async (req, res, next) => {
+  try {
+    const groups = await getGroups();
+    res.json(groups.map((g) => ({ id: g.id || g.chatId, name: g.name || g.subject || 'Unknown Group' })));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/', async (req, res, next) => {
   try {
     const { type, name, label, config } = req.body;
 
+    if (!req.user.family_id) {
+      return res.status(400).json({ error: { code: 'FAMILY_REQUIRED', message: 'Join or create a family first' } });
+    }
+
     if (!['whatsapp', 'gmail', 'gcal'].includes(type)) {
       return res.status(400).json({ error: { code: 'INVALID_TYPE', message: 'Type must be whatsapp, gmail, or gcal' } });
+    }
+
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: { code: 'INVALID_NAME', message: 'Source name is required' } });
     }
 
     const { data: source, error } = await supabase
@@ -34,7 +51,7 @@ router.post('/', async (req, res, next) => {
         family_id: req.user.family_id,
         created_by: req.user.id,
         type,
-        name,
+        name: String(name).trim(),
         label: label || 'General',
         config: config || {},
         status: 'connected',
@@ -49,7 +66,6 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// DELETE /api/sources/:id — Remove a source
 router.delete('/:id', async (req, res, next) => {
   try {
     const { error } = await supabase

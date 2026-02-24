@@ -1,32 +1,26 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const { google } = require('googleapis');
-const { getAuthUrl, getTokensFromCode, getAuthenticatedClient } = require('../config/google');
+const { getAuthUrl, getTokensFromCode, getAuthenticatedClient, normalizeTokens } = require('../config/google');
 const { supabase } = require('../config/database');
 
 const router = express.Router();
 
-// GET /auth/google — Redirect to Google OAuth
 router.get('/google', (req, res) => {
-  const url = getAuthUrl();
-  res.redirect(url);
+  res.redirect(getAuthUrl());
 });
 
-// GET /auth/google/callback — Handle OAuth callback
 router.get('/google/callback', async (req, res) => {
   try {
     const { code } = req.query;
-    if (!code) return res.status(400).json({ error: 'Missing authorization code' });
+    if (!code) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Missing authorization code' } });
 
-    // Exchange code for tokens
-    const tokens = await getTokensFromCode(code);
+    const tokens = normalizeTokens(await getTokensFromCode(code));
     const authClient = getAuthenticatedClient(tokens);
 
-    // Get user info
     const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
     const { data: profile } = await oauth2.userinfo.get();
 
-    // Upsert user in database
     const { data: user, error } = await supabase
       .from('users')
       .upsert(
@@ -45,38 +39,31 @@ router.get('/google/callback', async (req, res) => {
 
     if (error) throw error;
 
-    // Generate JWT
-    const jwtToken = jwt.sign(
-      { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${jwtToken}`);
+    const jwtToken = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${encodeURIComponent(jwtToken)}`);
   } catch (err) {
     console.error('[Auth] Google callback error:', err.message);
     res.redirect(`${process.env.FRONTEND_URL}/auth/error`);
   }
 });
 
-// GET /auth/me — Get current user (requires JWT in query for initial load)
 router.get('/me', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1] || req.query.token;
-    if (!token) return res.status(401).json({ error: 'No token' });
+    if (!token) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'No token' } });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     const { data: user } = await supabase
       .from('users')
       .select('id, email, name, picture, family_id')
       .eq('id', decoded.userId)
       .single();
 
+    if (!user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid token user' } });
+
     res.json(user);
   } catch (err) {
-    res.status(401).json({ error: 'Invalid token' });
+    res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid token' } });
   }
 });
 

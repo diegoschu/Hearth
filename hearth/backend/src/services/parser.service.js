@@ -1,9 +1,8 @@
 const OpenAI = require('openai');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 const SYSTEM_PROMPT = `You are a family calendar assistant. Parse the following message from a family-related chat group or email. Extract structured data about any schedulable events, deadlines, or action items.
-
 Respond ONLY in valid JSON with this exact schema:
 {
   "is_relevant": boolean,
@@ -16,32 +15,71 @@ Respond ONLY in valid JSON with this exact schema:
   "notes": string | null,
   "action_items": string[],
   "category": "school" | "medical" | "extracurricular" | "social" | "household" | "other"
+}`;
+
+const validCategories = ['school', 'medical', 'extracurricular', 'social', 'household', 'other'];
+
+function isTime(v) {
+  return typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 }
 
-Rules:
-- is_relevant = true only if the message contains a date, event, appointment, deadline, or schedulable item
-- confidence: 0.0-1.0 reflecting how sure you are about the extracted data
-- If you can infer a date from context (e.g., "this Thursday", "next week"), resolve it relative to today's date
-- action_items: practical tasks the family should do (e.g., "Buy tri-fold board", "Set outfit reminder")
-- If the message is just chit-chat, gossip, or non-actionable, set is_relevant to false
-- Do NOT make up information. If a field is unclear, set it to null`;
+function isDate(v) {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
 
-/**
- * Parse a raw message using GPT-4o-mini to extract structured event data.
- */
+function sanitizeParsed(parsed = {}) {
+  const clean = {
+    is_relevant: typeof parsed.is_relevant === 'boolean' ? parsed.is_relevant : false,
+    confidence: typeof parsed.confidence === 'number' ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
+    event_name: typeof parsed.event_name === 'string' ? parsed.event_name : null,
+    date: isDate(parsed.date) ? parsed.date : null,
+    time: isTime(parsed.time) ? parsed.time : null,
+    end_time: isTime(parsed.end_time) ? parsed.end_time : null,
+    location: typeof parsed.location === 'string' ? parsed.location : null,
+    notes: typeof parsed.notes === 'string' ? parsed.notes : null,
+    action_items: Array.isArray(parsed.action_items) ? parsed.action_items.filter((x) => typeof x === 'string') : [],
+    category: validCategories.includes(parsed.category) ? parsed.category : 'other',
+  };
+
+  if (!clean.is_relevant) {
+    clean.event_name = null;
+    clean.date = null;
+    clean.time = null;
+    clean.end_time = null;
+  }
+
+  return clean;
+}
+
+function heuristicParse(rawText = '') {
+  const lower = rawText.toLowerCase();
+  const hasDateWords = /(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}\/\d{1,2}|\d{4}-\d{2}-\d{2})/.test(lower);
+  const hasEventWords = /(practice|meeting|appointment|deadline|due|event|pickup|drop[- ]?off|checkup)/.test(lower);
+
+  return sanitizeParsed({
+    is_relevant: hasDateWords && hasEventWords,
+    confidence: hasDateWords && hasEventWords ? 0.45 : 0.1,
+    event_name: hasEventWords ? rawText.slice(0, 80) : null,
+    date: null,
+    time: null,
+    end_time: null,
+    location: null,
+    notes: 'Heuristic parse fallback (OpenAI unavailable).',
+    action_items: [],
+    category: 'other',
+  });
+}
+
 async function parseMessage(rawText, sourceContext = {}) {
+  if (!openai) return heuristicParse(rawText);
+
   const today = new Date().toISOString().split('T')[0];
   const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-
-  const userPrompt = `Today is ${dayOfWeek}, ${today}.
-Source: ${sourceContext.sourceName || 'Unknown'} (${sourceContext.sourceLabel || 'General'})
-
-Message to parse:
-"${rawText}"`;
+  const userPrompt = `Today is ${dayOfWeek}, ${today}.\nSource: ${sourceContext.sourceName || 'Unknown'} (${sourceContext.sourceLabel || 'General'})\nMessage to parse:\n"${rawText}"`;
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
@@ -51,55 +89,22 @@ Message to parse:
       response_format: { type: 'json_object' },
     });
 
-    const content = response.choices[0]?.message?.content;
-    const parsed = JSON.parse(content);
-
-    // Validate required fields
-    if (typeof parsed.is_relevant !== 'boolean') parsed.is_relevant = false;
-    if (typeof parsed.confidence !== 'number') parsed.confidence = 0.5;
-    parsed.confidence = Math.max(0, Math.min(1, parsed.confidence));
-
-    if (!Array.isArray(parsed.action_items)) parsed.action_items = [];
-
-    const validCategories = ['school', 'medical', 'extracurricular', 'social', 'household', 'other'];
-    if (!validCategories.includes(parsed.category)) parsed.category = 'other';
-
-    return parsed;
+    const content = response.choices[0]?.message?.content || '{}';
+    return sanitizeParsed(JSON.parse(content));
   } catch (error) {
     console.error('[Parser] OpenAI parsing failed:', error.message);
-
-    // Return a low-confidence fallback
-    return {
-      is_relevant: false,
-      confidence: 0,
-      event_name: null,
-      date: null,
-      time: null,
-      end_time: null,
-      location: null,
-      notes: `Parse failed: ${error.message}`,
-      action_items: [],
-      category: 'other',
-    };
+    return heuristicParse(rawText);
   }
 }
 
-/**
- * Batch parse multiple messages (more efficient for bulk processing).
- */
 async function parseMessages(messages) {
   const results = [];
   for (const msg of messages) {
     const parsed = await parseMessage(msg.content, msg.sourceContext);
     results.push({ rawMessageId: msg.id, ...parsed });
-
-    // Rate limiting: small delay between calls
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 120));
   }
   return results;
 }
 
-module.exports = {
-  parseMessage,
-  parseMessages,
-};
+module.exports = { parseMessage, parseMessages, sanitizeParsed };

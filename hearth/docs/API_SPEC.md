@@ -56,6 +56,9 @@ Get current user's family details and members.
 
 ### GET /api/sources
 List all registered sources for user's family.
+
+### GET /api/sources/whatsapp/groups
+List available WhatsApp groups from provider adapter (for source registration UI).
 ```json
 Response: [
   {

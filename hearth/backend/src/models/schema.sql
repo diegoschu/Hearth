@@ -36,8 +36,11 @@ CREATE TABLE IF NOT EXISTS sources (
   status TEXT DEFAULT 'connected' CHECK (status IN ('connected', 'error', 'paused')),
   last_polled TIMESTAMPTZ,
   message_count INTEGER DEFAULT 0,
+  last_error TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS last_error TEXT;
 
 -- Raw Messages (ingested from sources)
 CREATE TABLE IF NOT EXISTS raw_messages (
