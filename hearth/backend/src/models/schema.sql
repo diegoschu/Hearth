@@ -1,18 +1,7 @@
 -- Hearth Database Schema
--- Run this in Supabase SQL Editor
+-- Safe to run multiple times
 
--- Users (from Google OAuth)
-CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  google_id TEXT UNIQUE NOT NULL,
-  email TEXT UNIQUE NOT NULL,
-  name TEXT NOT NULL,
-  picture TEXT,
-  google_tokens JSONB, -- { access_token, refresh_token, expiry_date }
-  family_id UUID REFERENCES families(id),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Families (household groups)
 CREATE TABLE IF NOT EXISTS families (
@@ -22,15 +11,28 @@ CREATE TABLE IF NOT EXISTS families (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Users (from Google OAuth)
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  google_id TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  picture TEXT,
+  google_tokens JSONB,
+  family_id UUID REFERENCES families(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Sources (registered WhatsApp chats, email filters, calendars)
 CREATE TABLE IF NOT EXISTS sources (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id UUID REFERENCES families(id) NOT NULL,
   created_by UUID REFERENCES users(id) NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('whatsapp', 'gmail', 'gcal')),
-  name TEXT NOT NULL, -- "Lincoln Elementary Parents"
-  label TEXT NOT NULL, -- "School", "Medical", "Extracurricular"
-  config JSONB NOT NULL DEFAULT '{}', -- { chatId, emailFilter, calendarId }
+  name TEXT NOT NULL,
+  label TEXT NOT NULL,
+  config JSONB NOT NULL DEFAULT '{}',
   status TEXT DEFAULT 'connected' CHECK (status IN ('connected', 'error', 'paused')),
   last_polled TIMESTAMPTZ,
   message_count INTEGER DEFAULT 0,
@@ -42,17 +44,16 @@ CREATE TABLE IF NOT EXISTS raw_messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   source_id UUID REFERENCES sources(id) NOT NULL,
   family_id UUID REFERENCES families(id) NOT NULL,
-  external_id TEXT, -- WhatsApp message ID or Gmail message ID
+  external_id TEXT,
   content TEXT NOT NULL,
-  sender TEXT, -- Who sent the message
-  content_hash TEXT NOT NULL, -- SHA-256 for dedup
+  sender TEXT,
+  content_hash TEXT NOT NULL,
   received_at TIMESTAMPTZ NOT NULL,
   processed BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Unique constraint for deduplication
-CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_messages_hash 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_messages_hash
   ON raw_messages(source_id, content_hash);
 
 -- Parsed Events (AI-extracted structured data)
@@ -71,7 +72,7 @@ CREATE TABLE IF NOT EXISTS parsed_events (
   confidence DECIMAL(3,2) NOT NULL,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'dismissed', 'auto_confirmed')),
   assigned_to UUID REFERENCES users(id),
-  google_event_id TEXT, -- Set when pushed to Google Calendar
+  google_event_id TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -87,13 +88,13 @@ CREATE TABLE IF NOT EXISTS calendar_events (
   end_time TIMESTAMPTZ,
   location TEXT,
   description TEXT,
-  calendar_id TEXT, -- Which Google Calendar it came from
+  calendar_id TEXT,
   color TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_calendar_events_google 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_calendar_events_google
   ON calendar_events(user_id, google_event_id);
 
 -- Autonomy Settings (per-user, per-category)
@@ -102,12 +103,10 @@ CREATE TABLE IF NOT EXISTS autonomy_settings (
   user_id UUID REFERENCES users(id) NOT NULL,
   category TEXT NOT NULL,
   level INTEGER NOT NULL DEFAULT 2 CHECK (level IN (1, 2, 3)),
-  -- 1 = Dashboard, 2 = Co-pilot, 3 = Autopilot
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(user_id, category)
 );
 
--- Default autonomy settings for new users
 CREATE OR REPLACE FUNCTION create_default_autonomy()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -124,6 +123,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_default_autonomy ON users;
 CREATE TRIGGER trigger_default_autonomy
   AFTER INSERT ON users
   FOR EACH ROW

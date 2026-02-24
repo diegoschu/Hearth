@@ -102,7 +102,10 @@ cd ../backend && npm install
 
 # Set up environment
 cp backend/.env.example backend/.env
-# Fill in your API keys
+# Fill in required vars (Supabase + JWT + OAuth)
+
+# Run DB migration
+cd backend && npm run migrate
 
 # Run development
 cd backend && npm run dev    # Terminal 1
@@ -146,3 +149,7 @@ See [docs/API_SPEC.md](docs/API_SPEC.md) for full specification.
 ## Agent Logic
 
 See [docs/AGENT_LOGIC.md](docs/AGENT_LOGIC.md) for parsing rules and decision trees.
+
+## Phase 1 Setup Notes
+
+See [docs/PHASE1_BACKEND_SETUP.md](docs/PHASE1_BACKEND_SETUP.md) for backend foundation setup, migration, and run instructions.

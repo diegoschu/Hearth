@@ -15,9 +15,19 @@ const { authMiddleware } = require('./middleware/auth.middleware');
 const { errorHandler } = require('./middleware/error.middleware');
 const { pollAllSources } = require('./services/whatsapp.service');
 const { processNewMessages } = require('./services/agent.service');
+const { requireEnv } = require('./config/database');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+try {
+  requireEnv('JWT_SECRET');
+  requireEnv('FRONTEND_URL');
+} catch (error) {
+  console.error(error.message);
+  console.error('Copy backend/.env.example to backend/.env and fill required values.');
+  process.exit(1);
+}
 
 // Middleware
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
@@ -42,27 +52,29 @@ app.get('/health', (req, res) => {
 // Error handler
 app.use(errorHandler);
 
-// Cron Jobs
-// Poll WhatsApp sources every 60 seconds
-cron.schedule('* * * * *', async () => {
-  try {
-    console.log('[CRON] Polling WhatsApp sources...');
-    await pollAllSources();
-    await processNewMessages();
-  } catch (err) {
-    console.error('[CRON] Polling error:', err.message);
-  }
-});
+const pollerEnabled = process.env.ENABLE_POLLER === 'true';
+if (pollerEnabled) {
+  cron.schedule('* * * * *', async () => {
+    try {
+      console.log('[CRON] Polling WhatsApp sources...');
+      await pollAllSources();
+      await processNewMessages();
+    } catch (err) {
+      console.error('[CRON] Polling error:', err.message);
+    }
+  });
 
-// Generate daily digest at 7:00 AM
-cron.schedule('0 7 * * *', async () => {
-  try {
-    console.log('[CRON] Generating daily digests...');
-    // TODO: Generate and send digest for each family
-  } catch (err) {
-    console.error('[CRON] Digest error:', err.message);
-  }
-});
+  cron.schedule('0 7 * * *', async () => {
+    try {
+      console.log('[CRON] Generating daily digests...');
+      // TODO: Generate and send digest for each family
+    } catch (err) {
+      console.error('[CRON] Digest error:', err.message);
+    }
+  });
+} else {
+  console.log('[CRON] Poller disabled (set ENABLE_POLLER=true to enable).');
+}
 
 app.listen(PORT, () => {
   console.log(`🏠 Hearth backend running on port ${PORT}`);
