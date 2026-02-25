@@ -21,19 +21,26 @@ router.get('/google/callback', async (req, res) => {
     const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
     const { data: profile } = await oauth2.userinfo.get();
 
-    const upsert = await query(
-      `INSERT INTO users (google_id, email, name, picture, google_tokens, updated_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
-       ON CONFLICT (google_id)
-       DO UPDATE SET
-         email = EXCLUDED.email,
-         name = EXCLUDED.name,
-         picture = EXCLUDED.picture,
-         google_tokens = EXCLUDED.google_tokens,
-         updated_at = NOW()
-       RETURNING *`,
-      [profile.id, profile.email, profile.name, profile.picture, JSON.stringify(tokens)]
-    );
+    const upsertSql = `
+      INSERT INTO users (google_id, email, name, picture, google_tokens, updated_at)
+      VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
+      ON CONFLICT (google_id)
+      DO UPDATE SET
+        email = EXCLUDED.email,
+        name = EXCLUDED.name,
+        picture = EXCLUDED.picture,
+        google_tokens = EXCLUDED.google_tokens,
+        updated_at = NOW()
+      RETURNING id, email
+    `;
+
+    const upsert = await query(upsertSql, [
+      profile.id,
+      profile.email,
+      profile.name,
+      profile.picture,
+      JSON.stringify(tokens),
+    ]);
 
     const user = upsert.rows[0];
     const jwtToken = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '30d' });
