@@ -1,6 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const { query } = require('../config/database');
+const { isWhatsAppConfigured } = require('./integrations.service');
 
 const rapidApiClient = axios.create({
   baseURL: process.env.RAPIDAPI_WHATSAPP_HOST ? `https://${process.env.RAPIDAPI_WHATSAPP_HOST}` : undefined,
@@ -17,6 +18,7 @@ function hashContent(content) {
 }
 
 function classifyError(error) {
+  if (error?.message === 'WHATSAPP_NOT_CONFIGURED') return { type: 'not_configured', retryable: false };
   const status = error?.response?.status;
   if (status === 401 || status === 403) return { type: 'auth', retryable: false };
   if (status === 429) return { type: 'rate_limit', retryable: true };
@@ -41,8 +43,8 @@ async function retry(fn, attempts = 3) {
 }
 
 async function getMessages(chatId, limit = 50) {
-  if (!process.env.RAPIDAPI_KEY || !process.env.RAPIDAPI_WHATSAPP_HOST) {
-    throw new Error('RapidAPI WhatsApp env vars are not configured');
+  if (!isWhatsAppConfigured()) {
+    return [];
   }
 
   return retry(async () => {
@@ -52,7 +54,7 @@ async function getMessages(chatId, limit = 50) {
 }
 
 async function getGroups() {
-  if (!process.env.RAPIDAPI_KEY || !process.env.RAPIDAPI_WHATSAPP_HOST) {
+  if (!isWhatsAppConfigured()) {
     return [];
   }
   return retry(async () => {
@@ -64,6 +66,20 @@ async function getGroups() {
 async function pollAllSources() {
   const sourcesResult = await query("SELECT * FROM sources WHERE type = 'whatsapp' AND status = 'connected'");
   const sources = sourcesResult.rows || [];
+
+  if (!isWhatsAppConfigured()) {
+    for (const source of sources) {
+      await query(
+        `UPDATE sources
+         SET status = 'paused',
+             last_error = 'not_configured: RAPIDAPI_KEY/RAPIDAPI_WHATSAPP_HOST missing',
+             last_polled = NOW()
+         WHERE id = $1`,
+        [source.id]
+      );
+    }
+    return;
+  }
 
   for (const source of sources) {
     try {

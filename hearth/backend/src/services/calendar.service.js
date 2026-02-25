@@ -1,78 +1,99 @@
 const { google } = require('googleapis');
 const { getAuthenticatedClient } = require('../config/google');
 const { query } = require('../config/database');
+const { AppError } = require('../middleware/error.middleware');
+const { requireGoogleIntegration } = require('./integrations.service');
 
-async function syncCalendar(userId) {
+function asCalendarError(err) {
+  if (err instanceof AppError) return err;
+  const status = err?.code === 401 || err?.response?.status === 401 ? 412 : 502;
+  const code = status === 412 ? 'GOOGLE_REAUTH_REQUIRED' : 'GCAL_SYNC_FAILED';
+  return new AppError('Calendar integration temporarily unavailable. Please retry shortly.', status, code);
+}
+
+async function loadUserForGoogle(userId) {
   const userResult = await query('SELECT google_tokens, family_id FROM users WHERE id = $1 LIMIT 1', [userId]);
   const user = userResult.rows[0];
-  if (!user?.google_tokens) throw new Error('No Google tokens for user');
+  if (!user) throw new AppError('User not found', 404, 'USER_NOT_FOUND');
+  requireGoogleIntegration(user, 'gcal');
+  return user;
+}
 
-  const authClient = getAuthenticatedClient(user.google_tokens, userId);
-  const calendar = google.calendar({ version: 'v3', auth: authClient });
+async function syncCalendar(userId) {
+  try {
+    const user = await loadUserForGoogle(userId);
 
-  const now = new Date();
-  const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-  const response = await calendar.events.list({
-    calendarId: 'primary',
-    timeMin: now.toISOString(),
-    timeMax: thirtyDaysOut.toISOString(),
-    singleEvents: true,
-    orderBy: 'startTime',
-    maxResults: 250,
-  });
+    const authClient = getAuthenticatedClient(user.google_tokens, userId);
+    const calendar = google.calendar({ version: 'v3', auth: authClient });
 
-  const events = response.data.items || [];
-  for (const event of events) {
-    const startTime = event.start?.dateTime || `${event.start?.date}T00:00:00Z`;
-    const endTime = event.end?.dateTime || `${event.end?.date}T00:00:00Z`;
+    const now = new Date();
+    const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: now.toISOString(),
+      timeMax: thirtyDaysOut.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 250,
+    });
 
-    await query(
-      `INSERT INTO calendar_events (
-          user_id, family_id, google_event_id, title, start_time, end_time, location, description, calendar_id, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
-        ON CONFLICT (user_id, google_event_id)
-        DO UPDATE SET
-          title = EXCLUDED.title,
-          start_time = EXCLUDED.start_time,
-          end_time = EXCLUDED.end_time,
-          location = EXCLUDED.location,
-          description = EXCLUDED.description,
-          calendar_id = EXCLUDED.calendar_id,
-          updated_at = NOW()`,
-      [userId, user.family_id, event.id, event.summary || 'Untitled Event', startTime, endTime, event.location || null, event.description || null, 'primary']
-    );
+    const events = response.data.items || [];
+    for (const event of events) {
+      const startTime = event.start?.dateTime || `${event.start?.date}T00:00:00Z`;
+      const endTime = event.end?.dateTime || `${event.end?.date}T00:00:00Z`;
+
+      await query(
+        `INSERT INTO calendar_events (
+            user_id, family_id, google_event_id, title, start_time, end_time, location, description, calendar_id, updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+          ON CONFLICT (user_id, google_event_id)
+          DO UPDATE SET
+            title = EXCLUDED.title,
+            start_time = EXCLUDED.start_time,
+            end_time = EXCLUDED.end_time,
+            location = EXCLUDED.location,
+            description = EXCLUDED.description,
+            calendar_id = EXCLUDED.calendar_id,
+            updated_at = NOW()`,
+        [userId, user.family_id, event.id, event.summary || 'Untitled Event', startTime, endTime, event.location || null, event.description || null, 'primary']
+      );
+    }
+
+    return events.length;
+  } catch (err) {
+    throw asCalendarError(err);
   }
-
-  return events.length;
 }
 
 async function createEvent(userId, eventData) {
-  const userResult = await query('SELECT google_tokens, family_id FROM users WHERE id = $1 LIMIT 1', [userId]);
-  const user = userResult.rows[0];
-  if (!user?.google_tokens) throw new Error('No Google tokens for user');
+  try {
+    const user = await loadUserForGoogle(userId);
 
-  const authClient = getAuthenticatedClient(user.google_tokens, userId);
-  const calendar = google.calendar({ version: 'v3', auth: authClient });
+    const authClient = getAuthenticatedClient(user.google_tokens, userId);
+    const calendar = google.calendar({ version: 'v3', auth: authClient });
 
-  const response = await calendar.events.insert({
-    calendarId: 'primary',
-    resource: {
-      summary: eventData.title,
-      location: eventData.location || undefined,
-      description: eventData.notes || undefined,
-      start: { dateTime: eventData.startTime, timeZone: eventData.timeZone || 'America/New_York' },
-      end: { dateTime: eventData.endTime || eventData.startTime, timeZone: eventData.timeZone || 'America/New_York' },
-    },
-  });
+    const response = await calendar.events.insert({
+      calendarId: 'primary',
+      resource: {
+        summary: eventData.title,
+        location: eventData.location || undefined,
+        description: eventData.notes || undefined,
+        start: { dateTime: eventData.startTime, timeZone: eventData.timeZone || 'America/New_York' },
+        end: { dateTime: eventData.endTime || eventData.startTime, timeZone: eventData.timeZone || 'America/New_York' },
+      },
+    });
 
-  await query(
-    `INSERT INTO calendar_events
-      (user_id, family_id, google_event_id, title, start_time, end_time, location, description, calendar_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [userId, user.family_id, response.data.id, eventData.title, eventData.startTime, eventData.endTime, eventData.location, eventData.notes, 'primary']
-  );
+    await query(
+      `INSERT INTO calendar_events
+        (user_id, family_id, google_event_id, title, start_time, end_time, location, description, calendar_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [userId, user.family_id, response.data.id, eventData.title, eventData.startTime, eventData.endTime, eventData.location, eventData.notes, 'primary']
+    );
 
-  return response.data;
+    return response.data;
+  } catch (err) {
+    throw asCalendarError(err);
+  }
 }
 
 async function getUnifiedView(familyId, startDate, endDate) {

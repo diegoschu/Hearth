@@ -1,6 +1,8 @@
 const express = require('express');
 const { query } = require('../config/database');
 const { getGroups } = require('../services/whatsapp.service');
+const { validateSourceConfig, isWhatsAppConfigured } = require('../services/integrations.service');
+const { AppError } = require('../middleware/error.middleware');
 
 const router = express.Router();
 
@@ -21,8 +23,15 @@ router.get('/', async (req, res, next) => {
 
 router.get('/whatsapp/groups', async (req, res, next) => {
   try {
+    if (!isWhatsAppConfigured()) {
+      return res.json({ degraded: true, reason: 'WHATSAPP_NOT_CONFIGURED', groups: [] });
+    }
+
     const groups = await getGroups();
-    res.json(groups.map((g) => ({ id: g.id || g.chatId, name: g.name || g.subject || 'Unknown Group' })));
+    res.json({
+      degraded: false,
+      groups: groups.map((g) => ({ id: g.id || g.chatId, name: g.name || g.subject || 'Unknown Group' })),
+    });
   } catch (err) {
     next(err);
   }
@@ -33,22 +42,25 @@ router.post('/', async (req, res, next) => {
     const { type, name, label, config } = req.body;
 
     if (!req.user.family_id) {
-      return res.status(400).json({ error: { code: 'FAMILY_REQUIRED', message: 'Join or create a family first' } });
+      throw new AppError('Join or create a family first', 400, 'FAMILY_REQUIRED');
     }
 
     if (!['whatsapp', 'gmail', 'gcal'].includes(type)) {
-      return res.status(400).json({ error: { code: 'INVALID_TYPE', message: 'Type must be whatsapp, gmail, or gcal' } });
+      throw new AppError('Type must be whatsapp, gmail, or gcal', 400, 'INVALID_TYPE');
     }
 
     if (!name || !String(name).trim()) {
-      return res.status(400).json({ error: { code: 'INVALID_NAME', message: 'Source name is required' } });
+      throw new AppError('Source name is required', 400, 'INVALID_NAME');
     }
+
+    const cleanConfig = config || {};
+    validateSourceConfig({ type, config: cleanConfig, user: req.user });
 
     const insert = await query(
       `INSERT INTO sources (family_id, created_by, type, name, label, config, status)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'connected')
        RETURNING *`,
-      [req.user.family_id, req.user.id, type, String(name).trim(), label || 'General', JSON.stringify(config || {})]
+      [req.user.family_id, req.user.id, type, String(name).trim(), String(label || 'General').trim() || 'General', JSON.stringify(cleanConfig)]
     );
 
     res.status(201).json(insert.rows[0]);
@@ -59,7 +71,10 @@ router.post('/', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    await query('DELETE FROM sources WHERE id = $1 AND family_id = $2', [req.params.id, req.user.family_id]);
+    const result = await query('DELETE FROM sources WHERE id = $1 AND family_id = $2', [req.params.id, req.user.family_id]);
+    if (result.rowCount === 0) {
+      throw new AppError('Source not found', 404, 'SOURCE_NOT_FOUND');
+    }
     res.json({ deleted: true });
   } catch (err) {
     next(err);
