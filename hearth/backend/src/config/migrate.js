@@ -18,9 +18,10 @@ async function run() {
 
   try {
     await client.query('BEGIN');
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('hearth_schema_migration'))");
     await client.query(sql);
     await client.query('COMMIT');
-    console.log('✅ Migration complete: schema.sql applied successfully.');
+    console.log('✅ Migration complete: schema.sql applied successfully (idempotent).');
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('❌ Migration failed:', error.message);

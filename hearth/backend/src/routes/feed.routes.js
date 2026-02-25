@@ -1,19 +1,30 @@
 const express = require('express');
 const { query } = require('../config/database');
 const { createEvent } = require('../services/calendar.service');
+const { AppError } = require('../middleware/error.middleware');
 
 const router = express.Router();
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^\d{2}:\d{2}$/;
+
 router.get('/', async (req, res, next) => {
   try {
+    if (!req.user.family_id) {
+      return res.json({ items: [], total: 0, pendingCount: 0 });
+    }
+
     const { status } = req.query;
-    const limit = Number(req.query.limit || 20);
-    const offset = Number(req.query.offset || 0);
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 20)));
+    const offset = Math.max(0, Number(req.query.offset || 0));
 
     const where = ['pe.family_id = $1'];
     const params = [req.user.family_id];
 
     if (status) {
+      if (!['pending', 'confirmed', 'dismissed', 'auto_confirmed'].includes(status)) {
+        throw new AppError('Invalid status filter', 400, 'INVALID_STATUS');
+      }
       params.push(status);
       where.push(`pe.status = $${params.length}`);
     }
@@ -36,7 +47,7 @@ router.get('/', async (req, res, next) => {
     let countWhere = 'family_id = $1';
     if (status) {
       countParams.push(status);
-      countWhere += ` AND status = $2`;
+      countWhere += ' AND status = $2';
     }
 
     const totalResult = await query(`SELECT COUNT(*)::int AS count FROM parsed_events WHERE ${countWhere}`, countParams);
@@ -81,7 +92,7 @@ router.get('/', async (req, res, next) => {
 
 router.post('/:id/confirm', async (req, res, next) => {
   try {
-    const { assignTo, adjustments } = req.body;
+    const { assignTo, adjustments } = req.body || {};
 
     const parsedResult = await query(
       'SELECT * FROM parsed_events WHERE id = $1 AND family_id = $2 LIMIT 1',
@@ -90,11 +101,18 @@ router.post('/:id/confirm', async (req, res, next) => {
     const parsedEvent = parsedResult.rows[0];
 
     if (!parsedEvent) {
-      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found' } });
+      throw new AppError('Event not found', 404, 'NOT_FOUND');
     }
 
     const eventDate = adjustments?.date || parsedEvent.date;
+    if (!eventDate || !DATE_RE.test(String(eventDate))) {
+      throw new AppError('Event date is required and must be YYYY-MM-DD', 400, 'INVALID_DATE');
+    }
+
     const eventTime = adjustments?.time || (parsedEvent.time ? String(parsedEvent.time).slice(0, 5) : '09:00');
+    if (!TIME_RE.test(String(eventTime))) {
+      throw new AppError('Event time must be HH:MM', 400, 'INVALID_TIME');
+    }
 
     const startTime = `${eventDate}T${eventTime}:00`;
     const endTime = parsedEvent.end_time
@@ -126,12 +144,16 @@ router.post('/:id/confirm', async (req, res, next) => {
 
 router.post('/:id/dismiss', async (req, res, next) => {
   try {
-    await query(
+    const result = await query(
       `UPDATE parsed_events
        SET status = 'dismissed', updated_at = NOW()
        WHERE id = $1 AND family_id = $2`,
       [req.params.id, req.user.family_id]
     );
+
+    if (result.rowCount === 0) {
+      throw new AppError('Event not found', 404, 'NOT_FOUND');
+    }
 
     res.json({ status: 'dismissed' });
   } catch (err) {

@@ -1,5 +1,6 @@
 const express = require('express');
 const { query } = require('../config/database');
+const { AppError } = require('../middleware/error.middleware');
 
 const router = express.Router();
 
@@ -18,10 +19,15 @@ router.get('/autonomy', async (req, res, next) => {
 
 router.put('/autonomy', async (req, res, next) => {
   try {
-    const { category, level } = req.body;
+    const category = String(req.body?.category || '').trim();
+    const level = Number(req.body?.level);
+
+    if (!category) {
+      throw new AppError('Category is required', 400, 'INVALID_CATEGORY');
+    }
 
     if (![1, 2, 3].includes(level)) {
-      return res.status(400).json({ error: { message: 'Level must be 1, 2, or 3' } });
+      throw new AppError('Level must be 1, 2, or 3', 400, 'INVALID_LEVEL');
     }
 
     const result = await query(
