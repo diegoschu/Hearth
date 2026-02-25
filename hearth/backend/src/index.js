@@ -15,7 +15,9 @@ const { authMiddleware } = require('./middleware/auth.middleware');
 const { errorHandler } = require('./middleware/error.middleware');
 const { pollAllSources } = require('./services/whatsapp.service');
 const { processNewMessages } = require('./services/agent.service');
-const { requireEnv, healthcheckDb, dbMode } = require('./config/database');
+const fs = require('fs');
+const path = require('path');
+const { requireEnv, healthcheckDb, dbMode, pool } = require('./config/database');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -88,10 +90,33 @@ if (pollerEnabled) {
   console.log('[CRON] Poller disabled (set ENABLE_POLLER=true to enable).');
 }
 
+async function maybeAutoMigrate() {
+  const enabled = (process.env.AUTO_MIGRATE || 'true') === 'true';
+  if (!enabled) return;
+
+  const schemaPath = path.join(__dirname, 'models', 'schema.sql');
+  const sql = fs.readFileSync(schemaPath, 'utf8');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(sql);
+    await client.query('COMMIT');
+    console.log('[Startup] Auto-migrate applied successfully.');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('[Startup] Auto-migrate failed:', error.message);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function start() {
   try {
     await healthcheckDb();
     console.log('[Startup] Database connectivity check passed.');
+    await maybeAutoMigrate();
   } catch (error) {
     console.error('[Startup] Database connectivity check failed:', error.message);
     process.exit(1);
