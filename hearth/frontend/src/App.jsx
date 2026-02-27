@@ -57,55 +57,86 @@ function AuthError() {
 }
 
 function FamilySetup({ onUpdated }) {
-  const [name, setName] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
+  const [createName, setCreateName] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [joinError, setJoinError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
 
-  const createFamily = async () => {
-    if (!name.trim()) return setError('Family name is required.');
+  const createFamily = async (e) => {
+    e?.preventDefault?.();
+    if (!createName.trim()) {
+      setCreateError('Family name is required.');
+      return;
+    }
     setBusy(true);
-    setError('');
+    setCreateError('');
     try {
-      await api.post('/api/family', { name: name.trim() });
+      await api.post('/api/family', { name: createName.trim() });
       onUpdated();
     } catch (e) {
-      setError(e?.response?.data?.error?.message || 'Failed to create family.');
+      setCreateError(e?.response?.data?.error?.message || 'Failed to create family.');
     } finally {
       setBusy(false);
     }
   };
 
-  const joinFamily = async () => {
-    if (!inviteCode.trim()) return setError('Invite code is required.');
+  const joinFamily = async (e) => {
+    e?.preventDefault?.();
+    if (!joinCode.trim()) {
+      setJoinError('Invite code is required.');
+      return;
+    }
     setBusy(true);
-    setError('');
+    setJoinError('');
     try {
-      await api.post('/api/family/join', { inviteCode: inviteCode.trim() });
+      await api.post('/api/family/join', { inviteCode: joinCode.trim() });
       onUpdated();
     } catch (e) {
-      setError(e?.response?.data?.error?.message || 'Failed to join family.');
+      setJoinError(e?.response?.data?.error?.message || 'Failed to join family.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="card stack">
-      <h3 style={{ marginBottom: 0 }}>Set up your family</h3>
-      <p className="muted" style={{ marginTop: 0 }}>Create a new family or join one with an invite code.</p>
-      {error && <p className="error">{error}</p>}
-      <div className="grid2">
-        <div className="field">
-          <label>Family name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="The Schummer Family" />
-          <button className="primary" onClick={createFamily} disabled={busy}>Create family</button>
-        </div>
-        <div className="field">
-          <label>Invite code</label>
-          <input value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} placeholder="A1B2C3D4" />
-          <button onClick={joinFamily} disabled={busy}>Join family</button>
-        </div>
+    <div className="card family-setup">
+      <h2 style={{ margin: '0 0 4px' }}>Welcome to Hearth</h2>
+      <p className="muted" style={{ margin: 0 }}>
+        Create a family space for your household, or join one you were invited to.
+      </p>
+      <div className="family-setup-grid">
+        <form onSubmit={createFamily} className="family-setup-panel">
+          <h3 style={{ margin: 0 }}>Create family</h3>
+          <p className="muted" style={{ margin: '4px 0 8px' }}>
+            Pick a name everyone in your household will recognize.
+          </p>
+          <input
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+            placeholder="Schummer family"
+          />
+          {createError && <div className="error" style={{ marginTop: 8 }}>{createError}</div>}
+          <button className="primary" type="submit" disabled={busy || !createName.trim()}>
+            {busy ? 'Creating…' : 'Create family'}
+          </button>
+        </form>
+
+        <form onSubmit={joinFamily} className="family-setup-panel">
+          <h3 style={{ margin: 0 }}>Join with invite code</h3>
+          <p className="muted" style={{ margin: '4px 0 8px' }}>
+            Enter the code you received from another family member.
+          </p>
+          <input
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            placeholder="ABC123"
+          />
+          {joinError && <div className="error" style={{ marginTop: 8 }}>{joinError}</div>}
+          <button type="submit" disabled={busy || !joinCode.trim()}>
+            {busy ? 'Joining…' : 'Join family'}
+          </button>
+        </form>
       </div>
     </div>
   );
