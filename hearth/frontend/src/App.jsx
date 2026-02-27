@@ -447,10 +447,26 @@ function AppShell({ user, onLogout }) {
               <div className="card stack">
                 <h3 style={{ marginBottom: 0 }}>Connected sources ({sources.length})</h3>
                 {sources.length ? sources.map((source) => (
-                  <div key={source.id} className="feed-item inline" style={{ justifyContent: 'space-between' }}>
+                  <div key={source.id} className="feed-item inline" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
                       <strong>{source.name}</strong>
-                      <div className="muted">{source.type} · {source.label || 'General'} · {source.status}</div>
+                      <div className="muted">{source.type} · {source.label || 'General'}</div>
+                      <div className="muted">
+                        Status: {source.status || 'unknown'}
+                        {source.lastPolled && (
+                          <>
+                            {' · '}
+                            Last checked {new Date(source.lastPolled).toLocaleString()}
+                          </>
+                        )}
+                        {typeof source.messageCount === 'number' && ` · Messages: ${source.messageCount}`}
+                      </div>
+                      {source.lastError && (
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          <strong>Last error:</strong>{' '}
+                          {source.lastError.message || source.lastError}
+                        </div>
+                      )}
                     </div>
                     <button onClick={() => removeSource(source.id)}>Remove</button>
                   </div>
