@@ -362,7 +362,31 @@ function AppShell({ user, onLogout }) {
                       <span className="badge">{item.status}</span>
                     </div>
                     <div className="muted">{item.source?.type} · {item.source?.name || 'Unknown source'}</div>
-                    <div>{item.rawMessage || 'No message preview available.'}</div>
+                    {item.parsed && (
+                      <div className="muted" style={{ fontSize: 13 }}>
+                        {item.parsed.category && <span>Category: {item.parsed.category}</span>}
+                        {typeof item.parsed.confidence === 'number' && (
+                          <span>
+                            {item.parsed.category && ' · '}
+                            Confidence: {(item.parsed.confidence * 100).toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {item.parsed?.notes && (
+                      <div>
+                        <strong>Notes:</strong> {item.parsed.notes}
+                      </div>
+                    )}
+                    {item.parsed?.actionItems?.length ? (
+                      <div>
+                        <strong>Action items:</strong>{' '}
+                        <span className="muted">{item.parsed.actionItems.join(', ')}</span>
+                      </div>
+                    ) : null}
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      {item.rawMessage || 'No message preview available.'}
+                    </div>
                     <div className="inline">
                       <button
                         className="primary"
