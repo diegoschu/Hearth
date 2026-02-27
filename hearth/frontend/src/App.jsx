@@ -128,6 +128,38 @@ function AppShell({ user, onLogout }) {
   const [sourceBusy, setSourceBusy] = useState(false);
   const [sourceMessage, setSourceMessage] = useState('');
 
+  const hasFamily = Boolean(family?.id);
+  const hasSource = sources.length > 0;
+  const hasReviewedFeed = (feed.items?.length || 0) > 0;
+  const hasConfirmedEvent = calendar.days?.some((day) => day.events && day.events.length > 0);
+
+  const checklistSteps = useMemo(() => ([
+    {
+      id: 'family',
+      label: 'Create or join your family',
+      description: 'Name your household and invite the other grown-ups.',
+      done: hasFamily,
+    },
+    {
+      id: 'source',
+      label: 'Connect your first source',
+      description: 'Hook up a WhatsApp group, Gmail label, or Google Calendar.',
+      done: hasSource,
+    },
+    {
+      id: 'review',
+      label: 'Review your first feed item',
+      description: 'Glance at a message Hearth has parsed for you.',
+      done: hasReviewedFeed,
+    },
+    {
+      id: 'confirm',
+      label: 'Confirm your first calendar event',
+      description: 'Turn one parsed message into a real calendar event.',
+      done: hasConfirmedEvent,
+    },
+  ]), [hasFamily, hasSource, hasReviewedFeed, hasConfirmedEvent]);
+
   const loadAll = async () => {
     setLoading(true);
     setError('');
@@ -250,8 +282,6 @@ function AppShell({ user, onLogout }) {
     { id: 'settings', label: 'Settings' },
   ], [feed.pendingCount]);
 
-  const hasFamily = Boolean(family?.id);
-
   return (
     <div className="shell">
       <div className="header">
@@ -263,6 +293,29 @@ function AppShell({ user, onLogout }) {
           <button onClick={loadAll}>Refresh</button>
           <button onClick={onLogout}>Logout</button>
         </div>
+      </div>
+
+      <div className="card checklist">
+        <div className="inline" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h3 style={{ margin: '0 0 4px' }}>Getting started</h3>
+            <p className="muted" style={{ margin: 0 }}>Follow this short checklist to get to your first confirmed event.</p>
+          </div>
+          <div className="badge">
+            {checklistSteps.filter((s) => s.done).length}/{checklistSteps.length} done
+          </div>
+        </div>
+        <ol className="checklist-list">
+          {checklistSteps.map((step) => (
+            <li key={step.id} className="checklist-step">
+              <span className={step.done ? 'check-icon done' : 'check-icon'}>{step.done ? '✓' : '○'}</span>
+              <div>
+                <div className="checklist-label">{step.label}</div>
+                <div className="checklist-description">{step.description}</div>
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
 
       {loading && <p className="muted">Loading latest updates…</p>}
