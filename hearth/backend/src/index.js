@@ -17,14 +17,17 @@ const { authMiddleware } = require('./middleware/auth.middleware');
 const { errorHandler } = require('./middleware/error.middleware');
 const { pollAllSources } = require('./services/whatsapp.service');
 const { processNewMessages } = require('./services/agent.service');
-const { requireEnv, healthcheckDb, dbMode, pool, isDbConfigured } = require('./config/database');
+const { requireEnv, healthcheckDb, dbMode, pool, isDbConfigured, query } = require('./config/database');
 
 const PORT = process.env.PORT || 3001;
 
 function validateStartupEnv() {
   requireEnv('JWT_SECRET');
   requireEnv('FRONTEND_URL');
-  requireEnv('DATABASE_URL');
+  // DATABASE_URL is optional — server runs in demo mode without it
+  if (!process.env.DATABASE_URL) {
+    console.warn('[Startup] DATABASE_URL not set — running in demo mode (no persistence)');
+  }
 }
 
 function createApp() {
@@ -149,11 +152,15 @@ async function start() {
 
   try {
     await healthcheckDb();
-    console.log('[Startup] Database connectivity check passed.');
-    await maybeAutoMigrate();
+    if (isDbConfigured) {
+      console.log('[Startup] Database connectivity check passed.');
+      await maybeAutoMigrate();
+    }
   } catch (error) {
     console.error('[Startup] Database connectivity check failed:', error.message);
-    process.exit(1);
+    if (isDbConfigured) {
+      process.exit(1); // Only exit if DB was expected
+    }
   }
 
   setupCronJobs();

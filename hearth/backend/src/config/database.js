@@ -11,6 +11,7 @@ function requireEnv(name) {
 
 const hasSupabaseKeys = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
 const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+const isDbConfigured = hasDatabaseUrl;
 
 const pool = hasDatabaseUrl ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
 
@@ -23,6 +24,10 @@ async function query(text, params = []) {
 }
 
 async function healthcheckDb() {
+  if (!pool) {
+    console.warn('[Health] Database not configured — running in demo mode');
+    return; // succeed silently in demo mode
+  }
   await query('select 1');
 }
 
@@ -31,6 +36,8 @@ module.exports = {
   pool,
   healthcheckDb,
   requireEnv,
-  isDbConfigured: hasDatabaseUrl,
-  dbMode: hasSupabaseKeys ? 'supabase+postgres' : 'postgres',
+  isDbConfigured,
+  dbMode: hasDatabaseUrl
+    ? (hasSupabaseKeys ? 'supabase+postgres' : 'postgres')
+    : 'demo',
 };
