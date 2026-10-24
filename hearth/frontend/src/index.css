@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-warmgray-50 text-warmgray-900 antialiased;
+  }
+
+  ::selection {
+    @apply bg-hearth-200 text-hearth-900;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium
+           transition-all duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
+  }
+
+  .btn-primary {
+    @apply btn bg-hearth-600 text-white hover:bg-hearth-700 focus:ring-hearth-500
+           shadow-sm hover:shadow-md active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply btn bg-white text-warmgray-700 border border-warmgray-200 hover:bg-warmgray-50
+           hover:border-warmgray-300 focus:ring-warmgray-300;
+  }
+
+  .btn-ghost {
+    @apply btn text-warmgray-600 hover:bg-warmgray-100 hover:text-warmgray-800 focus:ring-warmgray-300;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 focus:ring-red-300;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs rounded-lg;
+  }
+
+  .btn-lg {
+    @apply px-6 py-3 text-base rounded-xl;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl border border-warmgray-100 shadow-card;
+  }
+
+  .card-interactive {
+    @apply card hover:shadow-card-hover transition-shadow duration-200;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-warmgray-200 bg-white px-3.5 py-2.5 text-sm
+           text-warmgray-900 placeholder:text-warmgray-400
+           focus:border-hearth-400 focus:outline-none focus:ring-2 focus:ring-hearth-200
+           transition-colors duration-150;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-warmgray-700 mb-1;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-blue {
+    @apply badge bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200;
+  }
+
+  .badge-green {
+    @apply badge bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200;
+  }
+
+  .badge-yellow {
+    @apply badge bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200;
+  }
+
+  .badge-red {
+    @apply badge bg-red-50 text-red-700 ring-1 ring-inset ring-red-200;
+  }
+
+  .badge-gray {
+    @apply badge bg-warmgray-100 text-warmgray-600 ring-1 ring-inset ring-warmgray-200;
+  }
+
+  .badge-hearth {
+    @apply badge bg-hearth-50 text-hearth-700 ring-1 ring-inset ring-hearth-200;
+  }
+}

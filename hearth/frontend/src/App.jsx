@@ -1,21 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { api, bootstrapAuth, setAuthToken } from './api';
-import './App.css';
-import { formatDateLabel, formatTimeRange, getFeedItemTitle } from './utils';
 
-function Login() {
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-  return (
-    <div className="shell" style={{ maxWidth: 520, marginTop: 80 }}>
-      <div className="card stack">
-        <h1 style={{ marginBottom: 0 }}>🏠 Hearth</h1>
-        <p className="muted" style={{ marginTop: 0 }}>Your family&apos;s second brain.</p>
-        <a href={`${apiBase}/auth/google`}><button className="primary">Continue with Google</button></a>
-      </div>
-    </div>
-  );
-}
+import Layout from './components/Layout';
+import OnboardingChecklist from './components/OnboardingChecklist';
+import ToastContainer from './components/Toast';
+import { useToast } from './hooks/useToast';
+
+import LoginPage from './pages/LoginPage';
+import FamilySetupPage from './pages/FamilySetupPage';
+import FeedPage from './pages/FeedPage';
+import CalendarPage from './pages/CalendarPage';
+import SourcesPage from './pages/SourcesPage';
+import SettingsPage from './pages/SettingsPage';
 
 function AuthCallback({ onAuthed }) {
   const navigate = useNavigate();
@@ -32,111 +29,44 @@ function AuthCallback({ onAuthed }) {
     setAuthToken(token);
     onAuthed(token)
       .then(() => navigate('/'))
-      .catch(() => navigate('/auth/error?reason=session'));    
+      .catch(() => navigate('/auth/error?reason=session'));
   }, [navigate, onAuthed]);
 
-  return <div className="shell"><div className="card">Signing you in…</div></div>;
-}
-
-function AuthError() {
-  const params = new URLSearchParams(window.location.search);
-  const reason = params.get('reason');
-  const message = reason === 'missing_token'
-    ? 'No sign-in token was returned. Please try again.'
-    : 'Authentication failed or expired. Try signing in again.';
-
   return (
-    <div className="shell" style={{ maxWidth: 640 }}>
-      <div className="card stack">
-        <h2>Couldn&apos;t sign you in</h2>
-        <p className="error">{message}</p>
-        <a href="/login"><button className="primary">Back to login</button></a>
+    <div className="min-h-screen flex items-center justify-center bg-warmgray-50">
+      <div className="card p-8 text-center">
+        <div className="animate-pulse mb-3">
+          <div className="w-12 h-12 rounded-2xl bg-hearth-100 flex items-center justify-center mx-auto">
+            <span className="text-2xl">🏠</span>
+          </div>
+        </div>
+        <p className="text-warmgray-600">Signing you in...</p>
       </div>
     </div>
   );
 }
 
-function FamilySetup({ onUpdated }) {
-  const [createName, setCreateName] = useState('');
-  const [createError, setCreateError] = useState('');
-  const [joinCode, setJoinCode] = useState('');
-  const [joinError, setJoinError] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const createFamily = async (e) => {
-    e?.preventDefault?.();
-    if (!createName.trim()) {
-      setCreateError('Family name is required.');
-      return;
-    }
-    setBusy(true);
-    setCreateError('');
-    try {
-      await api.post('/api/family', { name: createName.trim() });
-      onUpdated();
-    } catch (e) {
-      setCreateError(e?.response?.data?.error?.message || 'Failed to create family.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const joinFamily = async (e) => {
-    e?.preventDefault?.();
-    if (!joinCode.trim()) {
-      setJoinError('Invite code is required.');
-      return;
-    }
-    setBusy(true);
-    setJoinError('');
-    try {
-      await api.post('/api/family/join', { inviteCode: joinCode.trim() });
-      onUpdated();
-    } catch (e) {
-      setJoinError(e?.response?.data?.error?.message || 'Failed to join family.');
-    } finally {
-      setBusy(false);
-    }
-  };
+function AuthError() {
+  const params = new URLSearchParams(window.location.search);
+  const reason = params.get('reason');
+  const message =
+    reason === 'missing_token'
+      ? 'No sign-in token was returned. Please try again.'
+      : 'Authentication failed or expired. Try signing in again.';
 
   return (
-    <div className="card family-setup">
-      <h2 style={{ margin: '0 0 4px' }}>Welcome to Hearth</h2>
-      <p className="muted" style={{ margin: 0 }}>
-        Create a family space for your household, or join one you were invited to.
-      </p>
-      <div className="family-setup-grid">
-        <form onSubmit={createFamily} className="family-setup-panel">
-          <h3 style={{ margin: 0 }}>Create family</h3>
-          <p className="muted" style={{ margin: '4px 0 8px' }}>
-            Pick a name everyone in your household will recognize.
-          </p>
-          <input
-            value={createName}
-            onChange={(e) => setCreateName(e.target.value)}
-            placeholder="Schummer family"
-          />
-          {createError && <div className="error" style={{ marginTop: 8 }}>{createError}</div>}
-          <button className="primary" type="submit" disabled={busy || !createName.trim()}>
-            {busy ? 'Creating…' : 'Create family'}
-          </button>
-        </form>
-
-        <form onSubmit={joinFamily} className="family-setup-panel">
-          <h3 style={{ margin: 0 }}>Join with invite code</h3>
-          <p className="muted" style={{ margin: '4px 0 8px' }}>
-            Enter the code you received from another family member.
-          </p>
-          <input
-            value={joinCode}
-            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-            placeholder="ABC123"
-          />
-          {joinError && <div className="error" style={{ marginTop: 8 }}>{joinError}</div>}
-          <button type="submit" disabled={busy || !joinCode.trim()}>
-            {busy ? 'Joining…' : 'Join family'}
-          </button>
-        </form>
+    <div className="min-h-screen flex items-center justify-center bg-warmgray-50 px-4">
+      <div className="card p-8 max-w-md w-full text-center">
+        <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
+          <svg className="w-7 h-7 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-warmgray-900 mb-2">Couldn&apos;t sign you in</h2>
+        <p className="text-sm text-warmgray-500 mb-6">{message}</p>
+        <a href="/login">
+          <button className="btn-primary w-full">Back to login</button>
+        </a>
       </div>
     </div>
   );
@@ -150,49 +80,13 @@ function AppShell({ user, onLogout }) {
   const [sources, setSources] = useState([]);
   const [autonomy, setAutonomy] = useState([]);
   const [digest, setDigest] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [actionError, setActionError] = useState('');
   const [actionLoading, setActionLoading] = useState({});
+  const [syncing, setSyncing] = useState(false);
+  const toast = useToast();
 
-  const [sourceDraft, setSourceDraft] = useState({ type: 'whatsapp', name: '', label: 'General', config: '{}' });
-  const [sourceBusy, setSourceBusy] = useState(false);
-  const [sourceMessage, setSourceMessage] = useState('');
-
-  const hasFamily = Boolean(family?.id);
-  const hasSource = sources.length > 0;
-  const hasReviewedFeed = (feed.items?.length || 0) > 0;
-  const hasConfirmedEvent = calendar.days?.some((day) => day.events && day.events.length > 0);
-
-  const checklistSteps = useMemo(() => ([
-    {
-      id: 'family',
-      label: 'Create or join your family',
-      description: 'Name your household and invite the other grown-ups.',
-      done: hasFamily,
-    },
-    {
-      id: 'source',
-      label: 'Connect your first source',
-      description: 'Hook up a WhatsApp group, Gmail label, or Google Calendar.',
-      done: hasSource,
-    },
-    {
-      id: 'review',
-      label: 'Review your first feed item',
-      description: 'Glance at a message Hearth has parsed for you.',
-      done: hasReviewedFeed,
-    },
-    {
-      id: 'confirm',
-      label: 'Confirm your first calendar event',
-      description: 'Turn one parsed message into a real calendar event.',
-      done: hasConfirmedEvent,
-    },
-  ]), [hasFamily, hasSource, hasReviewedFeed, hasConfirmedEvent]);
-
-  const loadAll = async () => {
-    setLoading(true);
+  const loadAll = useCallback(async () => {
     setError('');
     try {
       const [f, fd, c, s, a, d] = await Promise.all([
@@ -201,7 +95,7 @@ function AppShell({ user, onLogout }) {
         api.get('/api/calendar'),
         api.get('/api/sources'),
         api.get('/api/settings/autonomy'),
-        api.get('/api/digest'),
+        api.get('/api/digest').catch(() => ({ data: null })),
       ]);
       setFamily(f.data);
       setFeed(fd.data);
@@ -210,11 +104,11 @@ function AppShell({ user, onLogout }) {
       setAutonomy(a.data);
       setDigest(d.data);
     } catch (e) {
-      setError(e?.response?.data?.error?.message || e.message || 'Failed to load workspace data.');
+      setError(e?.response?.data?.error?.message || e.message || 'Failed to load data.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadAll();
@@ -223,337 +117,166 @@ function AppShell({ user, onLogout }) {
       api.get('/api/digest').then((r) => setDigest(r.data)).catch(() => null);
     }, 15000);
     return () => clearInterval(id);
-  }, []);
+  }, [loadAll]);
 
   const markLoading = (id, state) => {
     setActionLoading((prev) => ({ ...prev, [id]: state }));
   };
 
-  const confirm = async (id) => {
+  const confirmItem = async (id) => {
     markLoading(id, true);
-    setActionError('');
     try {
       await api.post(`/api/feed/${id}/confirm`, {});
+      toast.success('Event confirmed and added to calendar!');
       await loadAll();
     } catch (e) {
-      setActionError(e?.response?.data?.error?.message || 'Failed to confirm event.');
+      toast.error(e?.response?.data?.error?.message || 'Failed to confirm event.');
     } finally {
       markLoading(id, false);
     }
   };
 
-  const dismiss = async (id) => {
+  const dismissItem = async (id) => {
     markLoading(id, true);
-    setActionError('');
     try {
       await api.post(`/api/feed/${id}/dismiss`);
+      toast.info('Item dismissed.');
       await loadAll();
     } catch (e) {
-      setActionError(e?.response?.data?.error?.message || 'Failed to dismiss event.');
+      toast.error(e?.response?.data?.error?.message || 'Failed to dismiss event.');
     } finally {
       markLoading(id, false);
     }
   };
 
   const updateAutonomy = async (category, level) => {
-    setActionError('');
     try {
       await api.put('/api/settings/autonomy', { category, level });
+      toast.success('Autonomy setting updated.');
       await loadAll();
     } catch (e) {
-      setActionError(e?.response?.data?.error?.message || 'Could not update autonomy setting.');
+      toast.error(e?.response?.data?.error?.message || 'Could not update setting.');
     }
   };
 
-  const addSource = async () => {
-    setSourceBusy(true);
-    setSourceMessage('');
-    setActionError('');
-
-    let parsedConfig = {};
+  const syncCalendar = async () => {
+    setSyncing(true);
     try {
-      parsedConfig = sourceDraft.config.trim() ? JSON.parse(sourceDraft.config) : {};
-    } catch {
-      setSourceBusy(false);
-      setActionError('Config must be valid JSON.');
-      return;
-    }
-
-    try {
-      await api.post('/api/sources', {
-        type: sourceDraft.type,
-        name: sourceDraft.name.trim(),
-        label: sourceDraft.label.trim() || 'General',
-        config: parsedConfig,
-      });
-      setSourceDraft((prev) => ({ ...prev, name: '', config: '{}' }));
-      setSourceMessage('Source connected.');
+      const { data } = await api.post('/api/calendar/sync');
+      if (data.degraded) {
+        toast.error(data.error?.message || 'Calendar sync is temporarily unavailable.');
+      } else {
+        toast.success(`Synced ${data.synced} events from Google Calendar.`);
+      }
       await loadAll();
     } catch (e) {
-      setActionError(e?.response?.data?.error?.message || 'Could not connect source.');
+      toast.error(e?.response?.data?.error?.message || 'Calendar sync failed.');
     } finally {
-      setSourceBusy(false);
+      setSyncing(false);
     }
   };
 
-  const removeSource = async (id) => {
-    setActionError('');
-    try {
-      await api.delete(`/api/sources/${id}`);
-      await loadAll();
-    } catch (e) {
-      setActionError(e?.response?.data?.error?.message || 'Could not remove source.');
-    }
+  const hasFamily = Boolean(family?.id);
+
+  const onboardingSteps = useMemo(
+    () => ({
+      family: hasFamily,
+      source: sources.length > 0,
+      review: (feed.items || []).some((i) => i.status !== 'pending'),
+      calendar: (calendar.days || []).some((d) => d.events?.length > 0),
+    }),
+    [hasFamily, sources.length, feed.items, calendar.days]
+  );
+
+  const onboardingComplete = Object.values(onboardingSteps).every(Boolean);
+
+  const handleOnboardingStepClick = (stepId) => {
+    if (stepId === 'source') setTab('sources');
+    if (stepId === 'review') setTab('feed');
+    if (stepId === 'calendar') setTab('calendar');
   };
 
-  const tabs = useMemo(() => [
-    { id: 'feed', label: `Feed (${feed.pendingCount || 0})` },
-    { id: 'calendar', label: 'Calendar' },
-    { id: 'sources', label: 'Sources' },
-    { id: 'settings', label: 'Settings' },
-  ], [feed.pendingCount]);
+  if (!loading && !hasFamily) {
+    return (
+      <>
+        <FamilySetupPage api={api} onUpdated={loadAll} />
+        <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
+      </>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-warmgray-50">
+        <div className="text-center">
+          <div className="animate-pulse mb-3">
+            <div className="w-12 h-12 rounded-2xl bg-hearth-100 flex items-center justify-center mx-auto">
+              <span className="text-2xl">🏠</span>
+            </div>
+          </div>
+          <p className="text-warmgray-500 text-sm">Loading your family workspace...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="shell">
-      <div className="header">
-        <div>
-          <h2 style={{ marginBottom: 4 }}>Hearth</h2>
-          <div className="muted">Welcome, {user?.name || 'there'}</div>
+    <Layout
+      user={user}
+      family={family}
+      activeTab={tab}
+      onTabChange={setTab}
+      onLogout={onLogout}
+      pendingCount={feed.pendingCount}
+    >
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+          <div className="flex items-center gap-2">
+            <svg
+              className="w-4 h-4 text-red-500 flex-shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+              />
+            </svg>
+            <p className="text-sm text-red-700">{error}</p>
+            <button onClick={loadAll} className="ml-auto text-sm text-red-600 font-medium hover:text-red-800">
+              Retry
+            </button>
+          </div>
         </div>
-        <div className="inline">
-          <button onClick={loadAll}>Refresh</button>
-          <button onClick={onLogout}>Logout</button>
-        </div>
-      </div>
-
-      <div className="card checklist">
-        <div className="inline" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <h3 style={{ margin: '0 0 4px' }}>Getting started</h3>
-            <p className="muted" style={{ margin: 0 }}>Follow this short checklist to get to your first confirmed event.</p>
-          </div>
-          <div className="badge">
-            {checklistSteps.filter((s) => s.done).length}/{checklistSteps.length} done
-          </div>
-        </div>
-        <ol className="checklist-list">
-          {checklistSteps.map((step) => (
-            <li key={step.id} className="checklist-step">
-              <span className={step.done ? 'check-icon done' : 'check-icon'}>{step.done ? '✓' : '○'}</span>
-              <div>
-                <div className="checklist-label">{step.label}</div>
-                <div className="checklist-description">{step.description}</div>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </div>
-
-      {loading && <p className="muted">Loading latest updates…</p>}
-      {error && <p className="error">{error}</p>}
-      {actionError && <p className="error">{actionError}</p>}
-
-      {!hasFamily ? (
-        <FamilySetup onUpdated={loadAll} />
-      ) : (
-        <>
-          <div className="card" style={{ marginBottom: 12 }}>
-            <div className="inline" style={{ justifyContent: 'space-between' }}>
-              <strong>{family.name}</strong>
-              <span className="badge">Invite code: {family.invite_code}</span>
-            </div>
-            <p className="muted" style={{ marginBottom: 0 }}>
-              Members: {family.members?.map((m) => m.name).join(', ') || 'No members found'}
-            </p>
-          </div>
-
-          <div className="nav">
-            {tabs.map((t) => (
-              <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>
-            ))}
-          </div>
-
-          {tab === 'feed' && (
-            <div className="stack">
-              <div className="card">
-                <h3>Daily digest</h3>
-                {digest ? (
-                  <pre style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{JSON.stringify(digest, null, 2)}</pre>
-                ) : (
-                  <p className="muted">Digest will appear once your sources start flowing.</p>
-                )}
-              </div>
-
-              <div className="card stack">
-                <h3 style={{ marginBottom: 0 }}>Review feed</h3>
-                {feed.items?.length ? feed.items.map((item) => (
-                  <div key={item.id} className="feed-item stack">
-                    <div className="inline" style={{ justifyContent: 'space-between' }}>
-                      <strong>{getFeedItemTitle(item)}</strong>
-                      <span className="badge">{item.status}</span>
-                    </div>
-                    <div className="muted">{item.source?.type} · {item.source?.name || 'Unknown source'}</div>
-                    {item.parsed && (
-                      <div className="muted" style={{ fontSize: 13 }}>
-                        {item.parsed.category && <span>Category: {item.parsed.category}</span>}
-                        {typeof item.parsed.confidence === 'number' && (
-                          <span>
-                            {item.parsed.category && ' · '}
-                            Confidence: {(item.parsed.confidence * 100).toFixed(0)}%
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {item.parsed?.notes && (
-                      <div>
-                        <strong>Notes:</strong> {item.parsed.notes}
-                      </div>
-                    )}
-                    {item.parsed?.actionItems?.length ? (
-                      <div>
-                        <strong>Action items:</strong>{' '}
-                        <span className="muted">{item.parsed.actionItems.join(', ')}</span>
-                      </div>
-                    ) : null}
-                    <div className="muted" style={{ fontSize: 13 }}>
-                      {item.rawMessage || 'No message preview available.'}
-                    </div>
-                    <div className="inline">
-                      <button
-                        className="primary"
-                        onClick={() => confirm(item.id)}
-                        disabled={item.status !== 'pending' || actionLoading[item.id]}
-                      >
-                        {actionLoading[item.id] ? 'Working…' : 'Confirm'}
-                      </button>
-                      <button
-                        onClick={() => dismiss(item.id)}
-                        disabled={item.status !== 'pending' || actionLoading[item.id]}
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  </div>
-                )) : <p className="muted">No items to review. You&apos;re all caught up.</p>}
-              </div>
-            </div>
-          )}
-
-          {tab === 'calendar' && (
-            <div className="card stack">
-              <h3 style={{ marginBottom: 0 }}>Calendar</h3>
-              {calendar.conflicts?.length > 0 && (
-                <p className="error">{calendar.conflicts.length} conflict(s) detected. Review overlapping events.</p>
-              )}
-              {calendar.days?.length ? calendar.days.map((day) => (
-                <div key={day.date} className="calendar-day stack">
-                  <strong>{formatDateLabel(day.date)}</strong>
-                  {day.events?.length ? day.events.map((event) => (
-                    <div key={event.id} className="feed-item">
-                      <div className="inline" style={{ justifyContent: 'space-between' }}>
-                        <strong>{event.title}</strong>
-                        <span className="muted">{formatTimeRange(event.start, event.end)}</span>
-                      </div>
-                      <div className="muted">{event.owner?.name || 'Family member'}</div>
-                      {event.location && <div>📍 {event.location}</div>}
-                    </div>
-                  )) : <span className="muted">No events on this day.</span>}
-                </div>
-              )) : <p className="muted">No events in this range yet.</p>}
-            </div>
-          )}
-
-          {tab === 'sources' && (
-            <div className="stack">
-              <div className="card stack">
-                <h3 style={{ marginBottom: 0 }}>Connect source</h3>
-                {sourceMessage && <p className="success">{sourceMessage}</p>}
-                <div className="grid2">
-                  <div className="field">
-                    <label>Type</label>
-                    <select value={sourceDraft.type} onChange={(e) => setSourceDraft((prev) => ({ ...prev, type: e.target.value }))}>
-                      <option value="whatsapp">WhatsApp</option>
-                      <option value="gmail">Gmail</option>
-                      <option value="gcal">Google Calendar</option>
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label>Name</label>
-                    <input value={sourceDraft.name} onChange={(e) => setSourceDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="School group chat" />
-                  </div>
-                </div>
-                <div className="grid2">
-                  <div className="field">
-                    <label>Label</label>
-                    <input value={sourceDraft.label} onChange={(e) => setSourceDraft((prev) => ({ ...prev, label: e.target.value }))} placeholder="General" />
-                  </div>
-                  <div className="field">
-                    <label>Config (JSON)</label>
-                    <textarea value={sourceDraft.config} onChange={(e) => setSourceDraft((prev) => ({ ...prev, config: e.target.value }))} />
-                  </div>
-                </div>
-                <div>
-                  <button className="primary" onClick={addSource} disabled={sourceBusy || !sourceDraft.name.trim()}>
-                    {sourceBusy ? 'Connecting…' : 'Add source'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="card stack">
-                <h3 style={{ marginBottom: 0 }}>Connected sources ({sources.length})</h3>
-                {sources.length ? sources.map((source) => (
-                  <div key={source.id} className="feed-item inline" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <strong>{source.name}</strong>
-                      <div className="muted">{source.type} · {source.label || 'General'}</div>
-                      <div className="muted">
-                        Status: {source.status || 'unknown'}
-                        {source.lastPolled && (
-                          <>
-                            {' · '}
-                            Last checked {new Date(source.lastPolled).toLocaleString()}
-                          </>
-                        )}
-                        {typeof source.messageCount === 'number' && ` · Messages: ${source.messageCount}`}
-                      </div>
-                      {source.lastError && (
-                        <div className="muted" style={{ marginTop: 4 }}>
-                          <strong>Last error:</strong>{' '}
-                          {source.lastError.message || source.lastError}
-                        </div>
-                      )}
-                    </div>
-                    <button onClick={() => removeSource(source.id)}>Remove</button>
-                  </div>
-                )) : <p className="muted">No sources connected yet.</p>}
-              </div>
-            </div>
-          )}
-
-          {tab === 'settings' && (
-            <div className="card stack">
-              <h3 style={{ marginBottom: 0 }}>Autonomy settings</h3>
-              {autonomy.length ? autonomy.map((s) => (
-                <div key={s.category} className="feed-item inline" style={{ justifyContent: 'space-between' }}>
-                  <strong>{s.category}</strong>
-                  <div className="inline">
-                    {[1, 2, 3].map((level) => (
-                      <button
-                        key={level}
-                        className={s.level === level ? 'primary' : ''}
-                        onClick={() => updateAutonomy(s.category, level)}
-                      >
-                        {level}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )) : <p className="muted">No autonomy preferences configured yet.</p>}
-            </div>
-          )}
-        </>
       )}
-    </div>
+
+      {!onboardingComplete && (
+        <OnboardingChecklist completedSteps={onboardingSteps} onStepClick={handleOnboardingStepClick} />
+      )}
+
+      {tab === 'feed' && (
+        <FeedPage
+          feed={feed}
+          digest={digest}
+          onConfirm={confirmItem}
+          onDismiss={dismissItem}
+          actionLoading={actionLoading}
+        />
+      )}
+
+      {tab === 'calendar' && <CalendarPage calendar={calendar} onSync={syncCalendar} syncing={syncing} />}
+
+      {tab === 'sources' && <SourcesPage sources={sources} api={api} onUpdated={loadAll} toast={toast} />}
+
+      {tab === 'settings' && (
+        <SettingsPage autonomy={autonomy} family={family} onUpdateAutonomy={updateAutonomy} user={user} />
+      )}
+
+      <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
+    </Layout>
   );
 }
 
@@ -586,7 +309,6 @@ export default function App() {
       setBooting(false);
       return;
     }
-
     fetchMe();
   }, []);
 
@@ -596,11 +318,24 @@ export default function App() {
     setUser(null);
   };
 
-  if (booting) return <div className="shell"><div className="card">Loading app…</div></div>;
+  if (booting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-warmgray-50">
+        <div className="text-center">
+          <div className="animate-pulse">
+            <div className="w-14 h-14 rounded-2xl bg-hearth-100 flex items-center justify-center mx-auto mb-3">
+              <span className="text-3xl">🏠</span>
+            </div>
+          </div>
+          <p className="text-warmgray-500">Loading Hearth...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Routes>
-      <Route path="/login" element={token ? <Navigate to="/" /> : <Login />} />
+      <Route path="/login" element={token ? <Navigate to="/" /> : <LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallback onAuthed={fetchMe} />} />
       <Route path="/auth/error" element={<AuthError />} />
       <Route path="/" element={token && user ? <AppShell user={user} onLogout={logout} /> : <Navigate to="/login" />} />
